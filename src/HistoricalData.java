@@ -51,14 +51,14 @@ public class HistoricalData implements ReaderWriterInterface {
         this.type="E";
     }
     
-        public HistoricalData(Date date, String symbol, String open, String high, String low, String close, String last, String volume,String openInterest,String expiry,String optionStrike,String optionType) {
+        public HistoricalData(Date date, String symbol, String open, String high, String low, String close, String settlePrice, String volume,String openInterest,String expiry,String optionStrike,String optionType) {
         this.dateFormat = date;
         this.symbol = symbol==null?"":symbol;
         this.open = open==null?"":open;
         this.high = high==null?"":high;
         this.low = low==null?"":low;
         this.close = close==null?"":close;
-        this.last = last==null?"":last;
+        this.last = settlePrice==null?"":settlePrice;
         this.volume = volume==null?"":volume;
         this.openInterest=openInterest==null?"":openInterest;
         this.expiry=expiry==null?"":expiry;
