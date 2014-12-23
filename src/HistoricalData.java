@@ -8,6 +8,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.PrintWriter;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -17,6 +18,7 @@ import java.util.logging.Logger;
  */
 public class HistoricalData implements ReaderWriterInterface {
     String date;
+    Date dateFormat;
     String symbol;
     String open;
     String high;
@@ -30,6 +32,11 @@ public class HistoricalData implements ReaderWriterInterface {
     String PB;
     String dividendyield;
     String type;
+    String openInterest;
+    String optionStrike;
+    String expiry;
+    String optionType;
+    
     private static final Logger logger = Logger.getLogger(HistoricalData.class.getName());
 
     public HistoricalData(String date, String symbol, String open, String high, String low, String close, String last, String volume) {
@@ -42,6 +49,26 @@ public class HistoricalData implements ReaderWriterInterface {
         this.last = last==null?"":last;
         this.volume = volume==null?"":volume;
         this.type="E";
+    }
+    
+        public HistoricalData(Date date, String symbol, String open, String high, String low, String close, String last, String volume,String openInterest,String expiry,String optionStrike,String optionType) {
+        this.dateFormat = date;
+        this.symbol = symbol==null?"":symbol;
+        this.open = open==null?"":open;
+        this.high = high==null?"":high;
+        this.low = low==null?"":low;
+        this.close = close==null?"":close;
+        this.last = last==null?"":last;
+        this.volume = volume==null?"":volume;
+        this.openInterest=openInterest==null?"":openInterest;
+        this.expiry=expiry==null?"":expiry;
+        this.optionStrike=optionStrike.equals("0")?null:optionStrike;
+        if(optionType.equals("CE")||optionType.equals("CA")){
+            this.optionType="CALL";
+        }else if (optionType.equals("PE")||optionType.equals("PA")){
+            this.optionType="PUT";
+        }
+        this.type="D";
     }
     
         public HistoricalData(String date, String symbol, String open, String high, String low, String close, String volume,String tradevalue,String PE,String PB, String divyield) {

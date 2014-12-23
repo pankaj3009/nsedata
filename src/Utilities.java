@@ -1,9 +1,13 @@
 
 
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.IOException;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Calendar;
+import java.util.Properties;
 import java.util.TimeZone;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -13,11 +17,11 @@ import java.util.logging.Logger;
  *
  * $Id$
  */
-public class DateUtil {
+public class Utilities {
 
     private static SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd");
     private static final long MILLI_SEC_PER_DAY = 1000 * 60 * 60 * 24;
-    private static final Logger logger = Logger.getLogger(DateUtil.class.getName());
+    private static final Logger logger = Logger.getLogger(Utilities.class.getName());
 
     public static long getCurrentTime() {
         return System.currentTimeMillis();
@@ -29,6 +33,14 @@ public class DateUtil {
                 + ((time < 1200) ? " AM" : " PM");
     }
 
+      public static Properties loadParameters(String parameterFile) throws FileNotFoundException, IOException {
+        Properties p = new Properties();
+        FileInputStream propFile;        
+            propFile = new FileInputStream(parameterFile);
+            p.load(propFile);
+        return p;
+    }
+   
     public static long getDeltaDays(String date) {
         long deltaDays = 0;
 
@@ -112,7 +124,7 @@ public class DateUtil {
             Date inputdate=inputFormat.parse(dateString);
             dateString=yyyyMMdd.format(inputdate);
         } catch (ParseException ex) {
-            Logger.getLogger(DateUtil.class.getName()).log(Level.SEVERE, null, ex);
+            Logger.getLogger(Utilities.class.getName()).log(Level.SEVERE, null, ex);
         }
 
         int date;
@@ -164,7 +176,7 @@ private static int daysInMonth(int year, int month) {
 
     //Testing routine
     public static void main(String args[]){
-        String out=DateUtil.getFormatedDate("yyyy-MM-dd HH:mm:ss",new Date().getTime(),TimeZone.getTimeZone("GMT-4:00"));
+        String out=Utilities.getFormatedDate("yyyy-MM-dd HH:mm:ss",new Date().getTime(),TimeZone.getTimeZone("GMT-4:00"));
         System.out.println(out);
         
     }

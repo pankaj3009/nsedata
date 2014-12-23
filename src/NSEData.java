@@ -4,12 +4,14 @@
  */
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
+import java.net.Socket;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -26,6 +28,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.LogManager;
@@ -44,12 +47,26 @@ public class NSEData {
      */
     private static final Logger logger = Logger.getLogger(NSEData.class.getName());
     private static Connection conn;
-
+    private static String cassandraIP;
+    private static String cassandraPort;
+    private static String cassandraEquityMetric;
+    private static String cassandraFutureMetric;
+    private static Socket cassandraConnection; 
+    
     public static void main(String[] args) throws MalformedURLException, ClassNotFoundException, SQLException, IOException, ParseException {
         SimpleDateFormat inputDateFormat = new SimpleDateFormat("yyyyMMdd");
         FileInputStream configFile;
         Class.forName("com.mysql.jdbc.Driver");
         conn = DriverManager.getConnection("jdbc:mysql://192.187.112.162:3306/nsedata?rewriteBatchedStatements=true", "psharma", "1history23");
+        File f = new File("cassandra.properties");
+        if(f.exists() && !f.isDirectory()) {
+        Properties p=Utilities.loadParameters("cassandra.properties");
+        cassandraIP=p.getProperty("cassandraconnection");
+        cassandraPort=p.getProperty("cassandraport");
+        cassandraEquityMetric=p.getProperty("equity");
+        cassandraFutureMetric=p.getProperty("future");
+        cassandraConnection= new Socket(cassandraIP, Integer.parseInt(cassandraPort));
+        }
         try {
             configFile = new FileInputStream("logging.properties");
             LogManager.getLogManager().readConfiguration(configFile);
@@ -70,22 +87,22 @@ public class NSEData {
                     break;
                 case "e":
                     if (args.length == 1) {
-                        String todayDate = DateUtil.getFormatedDate("yyyyMMdd", new Date().getTime());
+                        String todayDate = Utilities.getFormatedDate("yyyyMMdd", new Date().getTime());
                         System.out.println("Working with today's date: " + todayDate);
                         getStockHistoricalData(todayDate, todayDate);
                     } else if (args.length == 3) {
-                        if (DateUtil.isValidDate(args[1], inputDateFormat) && DateUtil.isValidDate(args[2], inputDateFormat)) {
+                        if (Utilities.isValidDate(args[1], inputDateFormat) && Utilities.isValidDate(args[2], inputDateFormat)) {
                             getStockHistoricalData(args[1], args[2]);
                         }
                     }
                     break;
                 case "i":
                     if (args.length == 1) {
-                        String todayDate = DateUtil.getFormatedDate("yyyyMMdd", new Date().getTime());
+                        String todayDate = Utilities.getFormatedDate("yyyyMMdd", new Date().getTime());
                         System.out.println("Working with today's date: " + todayDate);
                         getIndicesHistoricalData(todayDate, todayDate);
                     } else if (args.length == 3) {
-                        if (DateUtil.isValidDate(args[1], inputDateFormat) && DateUtil.isValidDate(args[2], inputDateFormat)) {
+                        if (Utilities.isValidDate(args[1], inputDateFormat) && Utilities.isValidDate(args[2], inputDateFormat)) {
                             getIndicesHistoricalData(args[1], args[2]);
                         }
                     }
@@ -106,13 +123,55 @@ public class NSEData {
         System.out.println("If startdate and endate are not specified, current system date is used");
     }
 
+    static void getFNOHistoricalData(String startDate, String endDate) throws MalformedURLException, IOException{
+        Calendar start = Calendar.getInstance();
+        start.setTime(Utilities.parseDate("yyyyMMdd", startDate));
+        Calendar end = Calendar.getInstance();
+        end.setTime(Utilities.parseDate("yyyyMMdd", endDate));
+        SimpleDateFormat yyyyFormat = new SimpleDateFormat("yyyy");
+        SimpleDateFormat ddMMMyyyyFormat = new SimpleDateFormat("ddMMMyyyy");
+         for (Date date = start.getTime(); !start.after(end); start.add(Calendar.DATE, 1)) {
+             //http://www.nseindia.com/content/historical/DERIVATIVES/2014/DEC/fo22DEC2014bhav.csv.zip
+             String dateString=ddMMMyyyyFormat.format(date);
+             String year = dateString.substring(5, 9);
+             String month = dateString.substring(2, 5).toUpperCase();
+             String nseTrades = String.format("http://www.nseindia.com/content/historical/DERIVATIVES/%s/%s/cm%sbhav.csv.zip", year, month, dateString);
+             URL nseTradesURL = new URL(nseTrades);
+              if (getResponseCode(nseTrades) != 404) {
+                  System.out.println("Parsing URL :" + nseTrades);
+                  ZipInputStream zin = new ZipInputStream(nseTradesURL.openStream());
+                    ZipEntry ze = zin.getNextEntry();
+                    BufferedReader in = new BufferedReader(new InputStreamReader(zin, "UTF-8"));
+                    String line;
+                    HashMap<String, HistoricalData> h = new HashMap<>();
+                    while ((line = in.readLine()) != null) {
+                        String symbolData[] = !line.isEmpty() ? line.split(",") : null;
+                        if (symbolData != null){
+                            String symbol=symbolData[1];
+                            String open=symbolData[5];
+                            String high=symbolData[6];
+                            String low=symbolData[7];
+                            String close=symbolData[8];
+                            String settlePrice=symbolData[9];
+                            String volume=symbolData[10];
+                            String openInterest=symbolData[12];
+                            String expiry=symbolData[2];
+                            String strike=symbolData[3];
+                            String optionType=symbolData[4];
+                            h.put(symbolData[0], new HistoricalData(date,symbol,open,high,low,close,settlePrice,volume,openInterest,expiry,strike,optionType));
+                        }
+                    }
+              }
+         }
+    }
+    
     static void getStockHistoricalData(String startDate, String endDate) throws MalformedURLException {
 
         Calendar start = Calendar.getInstance();
-        start.setTime(DateUtil.parseDate("yyyyMMdd", startDate));
+        start.setTime(Utilities.parseDate("yyyyMMdd", startDate));
 
         Calendar end = Calendar.getInstance();
-        end.setTime(DateUtil.parseDate("yyyyMMdd", endDate));
+        end.setTime(Utilities.parseDate("yyyyMMdd", endDate));
         for (Date date = start.getTime(); !start.after(end); start.add(Calendar.DATE, 1)) {
             try {
                 SimpleDateFormat inputFormat = new SimpleDateFormat("yyyyMMdd");
@@ -253,7 +312,7 @@ public class NSEData {
                                         //System.out.println("Line: " + line);
                                         String symbolData[] = line.split(",");
                                         index = index.replaceAll("%20", " ");
-                                        if (DateUtil.isValidDate(symbolData[0].replace("\"", "").trim(), ddHMMMHyyyyFormat)) {
+                                        if (Utilities.isValidDate(symbolData[0].replace("\"", "").trim(), ddHMMMHyyyyFormat)) {
                                             date = ddHMMMHyyyyFormat.parse(symbolData[0].replace("\"", "").trim());
                                             String dateString = yyyyMMddFormat.format(date).toUpperCase();
                                             if (symbolData.length > 6) {
