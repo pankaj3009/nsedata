@@ -149,7 +149,7 @@ public class NSEData {
         for (Date date = start.getTime(); !start.after(end); start.add(Calendar.DATE, 1)) {
             //http://www.nseindia.com/content/historical/DERIVATIVES/2014/DEC/fo22DEC2014bhav.csv.zip
             //http://www.nseindia.com/content/historical/DERIVATIVES/2014/DEC/fo22Dec2014bhav.csv.zip             
-            String dateString = ddMMMyyyyFormat.format(date).toUpperCase();
+            String dateString = ddMMMyyyyFormat.format(start.getTime()).toUpperCase();
             String year = dateString.substring(5, 9);
             String month = dateString.substring(2, 5).toUpperCase();
             String nseTrades = String.format("http://www.nseindia.com/content/historical/DERIVATIVES/%s/%s/fo%sbhav.csv.zip", year, month, dateString);
@@ -163,7 +163,7 @@ public class NSEData {
                 ArrayList<HistoricalData> h = new ArrayList<>();
                 while ((line = in.readLine()) != null) {
                     String symbolData[] = !line.isEmpty() ? line.split(",") : null;
-                    if (symbolData != null && !symbolData[1].equals("SYMBOL")) {
+                    if (symbolData != null && symbolData.length>=15 && !symbolData[1].equals("SYMBOL")) {
                         String symbol = symbolData[1];
                         String open = symbolData[5];
                         String high = symbolData[6];
@@ -180,7 +180,7 @@ public class NSEData {
                 }
                 for (HistoricalData hist : h) {
                     if (hist.optionStrike == null) {
-                        if (Integer.valueOf(hist.open) > 0) {
+                        if (Double.valueOf(hist.open) > 0) {
                             Cassandra(hist.open, hist.dateFormat.getTime(), cassandraFutureMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                             Cassandra(hist.high, hist.dateFormat.getTime(), cassandraFutureMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                             Cassandra(hist.low, hist.dateFormat.getTime(), cassandraFutureMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
@@ -197,7 +197,7 @@ public class NSEData {
                         Cassandra(hist.openInterest, hist.dateFormat.getTime(), cassandraFutureMetric + ".oi", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                         Cassandra(hist.last, hist.dateFormat.getTime(), cassandraFutureMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                     } else {
-                        if (Integer.valueOf(hist.open) > 0) {
+                        if (Double.valueOf(hist.open) > 0) {
                             Cassandra(hist.open, hist.dateFormat.getTime(), cassandraOptionMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                             Cassandra(hist.high, hist.dateFormat.getTime(), cassandraOptionMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                             Cassandra(hist.low, hist.dateFormat.getTime(), cassandraOptionMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
