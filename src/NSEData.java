@@ -175,9 +175,10 @@ public class NSEData {
                         String expiry = yyyyMMddFormat.format(ddMMMyyyHFormat.parse(symbolData[2]));
                         String strike = symbolData[3];
                         String optionType = symbolData[4];
-                        h.add(new HistoricalData(date, symbol, open, high, low, close, settlePrice, volume, openInterest, expiry, strike, optionType));
+                        h.add(new HistoricalData(start.getTime(), symbol, open, high, low, close, settlePrice, volume, openInterest, expiry, strike, optionType));
                     }
                 }
+                //data starts from 20000707
                 for (HistoricalData hist : h) {
                     if (hist.optionStrike == null) {
                         if (Double.valueOf(hist.open) > 0) {
@@ -215,8 +216,8 @@ public class NSEData {
                         Cassandra(hist.last, hist.dateFormat.getTime(), cassandraOptionMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
 
                     }
+                    }
                 }
-            }
 
         }
     }
