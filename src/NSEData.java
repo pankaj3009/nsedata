@@ -296,6 +296,7 @@ public class NSEData {
                         Cassandra(hist.last, time, cassandraEquityMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                         Cassandra(hist.volume, time, cassandraEquityMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                         Cassandra(hist.close, time, cassandraEquityMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        Cassandra(hist.deliverable, time, cassandraEquityMetric + ".delivered", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                     }
 
                     
@@ -456,7 +457,18 @@ public class NSEData {
                             h.put(symbolData[0], new HistoricalData(dateString, symbolData[0], symbolData[2], symbolData[3], symbolData[4], symbolData[5], symbolData[8], symbolData[9], symbolData[10], symbolData[11], symbolData[12]));
                         }
                     }
-                    writeToStorage(inputFormat.format(date).toUpperCase(), h);
+                    //writeToStorage(inputFormat.format(date).toUpperCase(), h);
+                         for(HistoricalData hist:h.values()){
+                         SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
+                        long time = formatter.parse(hist.date).getTime();
+                        Cassandra(hist.open, time, cassandraEquityMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        Cassandra(hist.high, time, cassandraEquityMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        Cassandra(hist.low, time, cassandraEquityMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        Cassandra(hist.last, time, cassandraEquityMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        Cassandra(hist.volume, time, cassandraEquityMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        Cassandra(hist.close, time, cassandraEquityMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        Cassandra(hist.tradedValue, time, cassandraEquityMetric + ".tradedvalue", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                       }
                 }
             }
         } catch (Exception e) {
