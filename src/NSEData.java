@@ -128,7 +128,6 @@ public class NSEData {
                     break;
             }
         }
-
     }
 
     static void usage() {
@@ -180,7 +179,15 @@ public class NSEData {
                 }
                 //data starts from 20000707
                 for (HistoricalData hist : h) {
-                    if (hist.optionStrike == null) {
+                    if(hist.expiry==null){
+                        Cassandra(hist.open, hist.dateFormat.getTime(), cassandraEquityMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        Cassandra(hist.high, hist.dateFormat.getTime(), cassandraEquityMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        Cassandra(hist.low, hist.dateFormat.getTime(), cassandraEquityMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        Cassandra(hist.last, hist.dateFormat.getTime(), cassandraEquityMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        Cassandra(hist.volume, hist.dateFormat.getTime(), cassandraEquityMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        Cassandra(hist.close, hist.dateFormat.getTime(), cassandraEquityMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+
+                    }  else if (hist.optionStrike == null) {
                         if (Double.valueOf(hist.open) > 0) {
                             Cassandra(hist.open, hist.dateFormat.getTime(), cassandraFutureMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                             Cassandra(hist.high, hist.dateFormat.getTime(), cassandraFutureMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
@@ -203,13 +210,11 @@ public class NSEData {
                             Cassandra(hist.high, hist.dateFormat.getTime(), cassandraOptionMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                             Cassandra(hist.low, hist.dateFormat.getTime(), cassandraOptionMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                             Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-
                         } else {
                             Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                             Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                             Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                             Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-
                         }
                         Cassandra(hist.volume, hist.dateFormat.getTime(), cassandraOptionMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                         Cassandra(hist.openInterest, hist.dateFormat.getTime(), cassandraOptionMetric + ".oi", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
@@ -243,7 +248,6 @@ public class NSEData {
 
                 if (getResponseCode(nseTrades) != 404) {
                     System.out.println("Parsing URL :" + nseTrades);
-
                     ZipInputStream zin = new ZipInputStream(nseTradesURL.openStream());
                     ZipEntry ze = zin.getNextEntry();
                     BufferedReader in = new BufferedReader(new InputStreamReader(zin, "UTF-8"));
@@ -460,7 +464,7 @@ public class NSEData {
 
         try {
             symbol = symbol.replaceAll(" ", "").replaceAll("&", "");
-            if (symbol.equals("NIFTY")) {
+            if (symbol.equals("NIFTY")||symbol.equalsIgnoreCase("CNXNifty")) {
                 symbol = "NSENIFTY";
             }
             if (expiry == null) {
@@ -473,7 +477,7 @@ public class NSEData {
 
 
         } catch (Exception ex) {
-            Logger.getLogger(Cassandra.class.getName()).log(Level.SEVERE, null, ex);
+            logger.log(Level.SEVERE, null, ex);
         } finally {
             //output.close();
         }
