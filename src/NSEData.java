@@ -51,35 +51,56 @@ public class NSEData {
     private static String cassandraIP;
     private static String cassandraPort;
     private static String cassandraEquityMetric;
+    private static String cassandraIndexMetric;
     private static String cassandraFutureMetric;
     private static String cassandraOptionMetric;
     private static Socket cassandraConnection;
     private static PrintStream output;
+    private static String sqlTable;
+    private static boolean useSQL = false;
+    private static boolean useCassandra = false;
+    private static boolean useFile = false;
 
     public static void main(String[] args) throws MalformedURLException, ClassNotFoundException, SQLException, IOException, ParseException {
         SimpleDateFormat inputDateFormat = new SimpleDateFormat("yyyyMMdd");
         FileInputStream configFile;
         Class.forName("com.mysql.jdbc.Driver");
-        conn = DriverManager.getConnection("jdbc:mysql://192.187.112.162:3306/nsedata?rewriteBatchedStatements=true", "psharma", "1history23");
-        File f = new File("cassandra.properties");
+        File f = new File("nsedata.properties");
         if (f.exists() && !f.isDirectory()) {
-            Properties p = Utilities.loadParameters("cassandra.properties");
+            Properties p = Utilities.loadParameters("nsedata.properties");
             cassandraIP = p.getProperty("cassandraconnection");
             cassandraPort = p.getProperty("cassandraport");
             cassandraEquityMetric = p.getProperty("equity");
             cassandraFutureMetric = p.getProperty("future");
             cassandraOptionMetric = p.getProperty("option");
-            cassandraConnection = new Socket(cassandraIP, Integer.parseInt(cassandraPort));
-            output = new PrintStream(cassandraConnection.getOutputStream());
+            cassandraIndexMetric = p.getProperty("index");
+            if (cassandraIP != null && cassandraPort != null) {
+                useCassandra = true;
+                cassandraConnection = new Socket(cassandraIP, Integer.parseInt(cassandraPort));
+                output = new PrintStream(cassandraConnection.getOutputStream());
+            }
+            String sqlIP = p.getProperty("sqlconnection");
+            String sqlDatabase = p.getProperty("sqldatabase");
+            sqlTable = p.getProperty("sqltable");
+            String sqlUserName = p.getProperty("sqlusername");
+            String sqlPassword = p.getProperty("sqlpassword");
+            if (sqlIP != null && sqlDatabase != null && sqlTable != null) {
+                useSQL = true;
+                //conn = DriverManager.getConnection("jdbc:mysql://192.187.112.162:3306/nsedata?rewriteBatchedStatements=true", "psharma", "1history23");
+                conn = DriverManager.getConnection("jdbc:mysql://" + sqlIP + "/" + sqlDatabase + "?rewriteBatchedStatements=true", sqlUserName, sqlPassword);
+
+            }
+            useFile = p.getProperty("fileoutput") != null ? Boolean.parseBoolean(p.getProperty("fileoutput")) : false;
+
         }
         try {
             configFile = new FileInputStream("logging.properties");
             LogManager.getLogManager().readConfiguration(configFile);
 
         } catch (FileNotFoundException ex) {
-            Logger.getLogger(NSEData.class.getName()).log(Level.SEVERE, null, ex);
+            logger.log(Level.SEVERE, null, ex);
         } catch (IOException | SecurityException ex) {
-            Logger.getLogger(NSEData.class.getName()).log(Level.SEVERE, null, ex);
+            logger.log(Level.SEVERE, null, ex);
         }
         //getSplits();
         usage();
@@ -131,7 +152,8 @@ public class NSEData {
     }
 
     static void usage() {
-        System.out.println("usage: java -jar NSETools -e startdate enddate");
+        System.out.println("usage: java -jar NSETools eif startdate enddate");
+        System.out.println("e->imports equity, i->imports indices, f->imports futures and options");
         System.out.println("startdate and enddate should be specified in yyyyMMdd format");
         System.out.println("If startdate and endate are not specified, current system date is used");
     }
@@ -162,7 +184,7 @@ public class NSEData {
                 ArrayList<HistoricalData> h = new ArrayList<>();
                 while ((line = in.readLine()) != null) {
                     String symbolData[] = !line.isEmpty() ? line.split(",") : null;
-                    if (symbolData != null && symbolData.length>=15 && !symbolData[1].equals("SYMBOL")) {
+                    if (symbolData != null && symbolData.length >= 15 && !symbolData[1].equals("SYMBOL")) {
                         String symbol = symbolData[1];
                         String open = symbolData[5];
                         String high = symbolData[6];
@@ -178,43 +200,45 @@ public class NSEData {
                     }
                 }
                 //data starts from 20000707
-                for (HistoricalData hist : h) {
-                    if (hist.optionStrike == null) {
-                        if (Double.valueOf(hist.open) > 0) {
-                            Cassandra(hist.open, hist.dateFormat.getTime(), cassandraFutureMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.high, hist.dateFormat.getTime(), cassandraFutureMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.low, hist.dateFormat.getTime(), cassandraFutureMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                if (useCassandra) {
+                    for (HistoricalData hist : h) {
+                        if (hist.optionStrike == null) {
+                            if (Double.valueOf(hist.open) > 0) {
+                                Cassandra(hist.open, hist.dateFormat.getTime(), cassandraFutureMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.high, hist.dateFormat.getTime(), cassandraFutureMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.low, hist.dateFormat.getTime(), cassandraFutureMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
 
+                            } else {
+                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+
+                            }
+                            Cassandra(hist.volume, hist.dateFormat.getTime(), cassandraFutureMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.openInterest, hist.dateFormat.getTime(), cassandraFutureMetric + ".oi", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.last, hist.dateFormat.getTime(), cassandraFutureMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                         } else {
-                            Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            if (Double.valueOf(hist.open) > 0) {
+                                Cassandra(hist.open, hist.dateFormat.getTime(), cassandraOptionMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.high, hist.dateFormat.getTime(), cassandraOptionMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.low, hist.dateFormat.getTime(), cassandraOptionMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            } else {
+                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            }
+                            Cassandra(hist.volume, hist.dateFormat.getTime(), cassandraOptionMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.openInterest, hist.dateFormat.getTime(), cassandraOptionMetric + ".oi", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.last, hist.dateFormat.getTime(), cassandraOptionMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
 
                         }
-                        Cassandra(hist.volume, hist.dateFormat.getTime(), cassandraFutureMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.openInterest, hist.dateFormat.getTime(), cassandraFutureMetric + ".oi", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.last, hist.dateFormat.getTime(), cassandraFutureMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                    } else {
-                        if (Double.valueOf(hist.open) > 0) {
-                            Cassandra(hist.open, hist.dateFormat.getTime(), cassandraOptionMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.high, hist.dateFormat.getTime(), cassandraOptionMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.low, hist.dateFormat.getTime(), cassandraOptionMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        } else {
-                            Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        }
-                        Cassandra(hist.volume, hist.dateFormat.getTime(), cassandraOptionMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.openInterest, hist.dateFormat.getTime(), cassandraOptionMetric + ".oi", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.last, hist.dateFormat.getTime(), cassandraOptionMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-
-                    }
                     }
                 }
+            }
 
         }
     }
@@ -286,20 +310,27 @@ public class NSEData {
                             }
                         }
                     }
-                    //writeToStorage(inputFormat.format(date).toUpperCase(), h);
-                    for(HistoricalData hist:h.values()){
-                         SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
-                        long time = formatter.parse(hist.date).getTime();
-                        Cassandra(hist.open, time, cassandraEquityMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.high, time, cassandraEquityMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.low, time, cassandraEquityMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.last, time, cassandraEquityMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.volume, time, cassandraEquityMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.close, time, cassandraEquityMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.deliverable, time, cassandraEquityMetric + ".delivered", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                    if (useSQL) {
+                        writeToSQL(inputFormat.format(date).toUpperCase(), h);
+                    }
+                    if (useFile) {
+                        writeToFile(inputFormat.format(date).toUpperCase(), h);
+                    }
+                    if (useCassandra) {
+                        for (HistoricalData hist : h.values()) {
+                            SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
+                            long time = formatter.parse(hist.date).getTime();
+                            Cassandra(hist.open, time, cassandraEquityMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.high, time, cassandraEquityMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.low, time, cassandraEquityMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.last, time, cassandraEquityMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.volume, time, cassandraEquityMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.close, time, cassandraEquityMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.deliverable, time, cassandraEquityMetric + ".delivered", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        }
                     }
 
-                    
+
                 }
             } catch (Exception e) {
                 logger.log(Level.SEVERE, null, e);
@@ -423,7 +454,25 @@ public class NSEData {
                             }
                         }
                         if (date != null && !h.isEmpty()) {
-                            writeToStorage(yyyyMMddFormat.format(date).toUpperCase(), h);
+                            if (useSQL) {
+                                writeToSQL(yyyyMMddFormat.format(date).toUpperCase(), h);
+                            }
+                            if (useFile) {
+                                writeToFile(yyyyMMddFormat.format(date).toUpperCase(), h);
+                            }
+                            if (useCassandra) {
+                                for (HistoricalData hist : h.values()) {
+                                    SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
+                                    long time = formatter.parse(hist.date).getTime();
+                                    Cassandra(hist.open, time, cassandraIndexMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.high, time, cassandraIndexMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.low, time, cassandraIndexMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.last, time, cassandraIndexMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.volume, time, cassandraIndexMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.close, time, cassandraIndexMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.tradedValue, time, cassandraIndexMetric + ".tradedvalue", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                }
+                            }
                         }
                         sd = addDays(ed, 1);
                         ed = sd;
@@ -457,18 +506,25 @@ public class NSEData {
                             h.put(symbolData[0], new HistoricalData(dateString, symbolData[0], symbolData[2], symbolData[3], symbolData[4], symbolData[5], symbolData[8], symbolData[9], symbolData[10], symbolData[11], symbolData[12]));
                         }
                     }
-                    //writeToStorage(inputFormat.format(date).toUpperCase(), h);
-                         for(HistoricalData hist:h.values()){
-                         SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
-                        long time = formatter.parse(hist.date).getTime();
-                        Cassandra(hist.open, time, cassandraEquityMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.high, time, cassandraEquityMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.low, time, cassandraEquityMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.last, time, cassandraEquityMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.volume, time, cassandraEquityMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.close, time, cassandraEquityMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        Cassandra(hist.tradedValue, time, cassandraEquityMetric + ".tradedvalue", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                       }
+                    if (useSQL) {
+                        writeToSQL(inputFormat.format(date).toUpperCase(), h);
+                    }
+                    if (useFile) {
+                        writeToFile(inputFormat.format(date).toUpperCase(), h);
+                    }
+                    if (useCassandra) {
+                        for (HistoricalData hist : h.values()) {
+                            SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
+                            long time = formatter.parse(hist.date).getTime();
+                            Cassandra(hist.open, time, cassandraIndexMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.high, time, cassandraIndexMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.low, time, cassandraIndexMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.last, time, cassandraIndexMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.volume, time, cassandraIndexMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.close, time, cassandraIndexMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                            Cassandra(hist.tradedValue, time, cassandraIndexMetric + ".tradedvalue", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                        }
+                    }
                 }
             }
         } catch (Exception e) {
@@ -480,11 +536,14 @@ public class NSEData {
 
         try {
             symbol = symbol.replaceAll(" ", "").replaceAll("&", "");
-            if (symbol.equals("NIFTY")||symbol.equalsIgnoreCase("CNXNifty")) {
+            if (symbol.equals("NIFTY") || symbol.equalsIgnoreCase("CNXNifty")) {
                 symbol = "NSENIFTY";
             }
+            if(!isNumeric(value)){
+                value="0";
+            }
             if (expiry == null) {
-                output.print("put " + metric + " " + time + " " + value + " " + "symbol=" + symbol.toLowerCase() + System.getProperty("line.separator"));
+                output.print("put " + metric + " " + time + " " + value + " " + "symbol=" + symbol.replaceAll("[^A-Za-z0-9]", "").toLowerCase() + System.getProperty("line.separator"));
             } else if (strike == null) {
                 output.print("put " + metric + " " + time + " " + value + " " + "symbol=" + symbol.toLowerCase() + " " + "expiry=" + expiry + System.getProperty("line.separator"));
             } else {
@@ -499,16 +558,16 @@ public class NSEData {
         }
     }
 
-    static void writeToStorage(String dateString, HashMap<String, HistoricalData> h) throws SQLException {
+    static void writeToSQL(String dateString, HashMap<String, HistoricalData> h) throws SQLException {
         PreparedStatement stmt = null;
         conn.setAutoCommit(false);
-        stmt = conn.prepareStatement("INSERT INTO historicaldaily (date,symbol,open,high,low,close,last,volume,delivered,tradedvalue,pe,pb,yield,type) " + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?);");
+        stmt = conn.prepareStatement("INSERT INTO " + sqlTable + " (date,symbol,open,high,low,close,last,volume,delivered,tradedvalue,pe,pb,yield,type) " + " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?,?,?,?,?,?);");
         long startTime = new Date().getTime();
         int i = 0;
         for (Map.Entry<String, HistoricalData> entry : h.entrySet()) {
             try {
                 entry.getValue().symbol = entry.getValue().symbol.replaceAll(" ", "");
-                entry.getValue().writer(dateString + "_equity.csv");
+                //entry.getValue().writer(dateString + "_equity.csv");
                 entry.getValue().open = isNumeric(entry.getValue().open) ? entry.getValue().open : "0";
                 entry.getValue().high = isNumeric(entry.getValue().high) ? entry.getValue().high : "0";
                 entry.getValue().low = isNumeric(entry.getValue().low) ? entry.getValue().low : "0";
@@ -539,7 +598,7 @@ public class NSEData {
                 stmt.setString(12, entry.getValue().PB);
                 stmt.setString(13, entry.getValue().dividendyield);
                 stmt.setString(14, entry.getValue().type);
-                stmt.execute();
+                //stmt.execute();
                 /*
                  if ((i + 1) % 1000 == 0) {
                  stmt.executeBatch();
@@ -554,6 +613,18 @@ public class NSEData {
         conn.commit();
         stmt.close();
         System.out.println("Completed Equity Download for: " + dateString + " .Seconds to insert:" + (new Date().getTime() - startTime) / 1000);
+    }
+
+    static void writeToFile(String dateString, HashMap<String, HistoricalData> h) throws SQLException {
+
+        for (Map.Entry<String, HistoricalData> entry : h.entrySet()) {
+            try {
+                entry.getValue().symbol = entry.getValue().symbol.replaceAll(" ", "");
+                entry.getValue().writer(dateString + "_equity.csv");
+            } catch (Exception e) {
+                logger.log(Level.INFO, null, e);
+            }
+        }
     }
 
     public static boolean isNumeric(String str) {
