@@ -67,7 +67,7 @@ public class NSEData {
         Class.forName("com.mysql.jdbc.Driver");
         File f = new File("nsedata.properties");
         if (f.exists() && !f.isDirectory()) {
-            Properties p = Utilities.loadParameters("nsedata.properties");
+            Properties p = Utilities.loadParameters(args[1]);
             cassandraIP = p.getProperty("cassandraconnection");
             cassandraPort = p.getProperty("cassandraport");
             cassandraEquityMetric = p.getProperty("equity");
@@ -112,35 +112,35 @@ public class NSEData {
                     getSymbolChange();
                     break;
                 case "e":
-                    if (args.length == 1) {
+                    if (args.length == 2) {
                         String todayDate = Utilities.getFormatedDate("yyyyMMdd", new Date().getTime());
                         System.out.println("Working with today's date: " + todayDate);
                         getStockHistoricalData(todayDate, todayDate);
-                    } else if (args.length == 3) {
-                        if (Utilities.isValidDate(args[1], inputDateFormat) && Utilities.isValidDate(args[2], inputDateFormat)) {
-                            getStockHistoricalData(args[1], args[2]);
+                    } else if (args.length == 4) {
+                        if (Utilities.isValidDate(args[2], inputDateFormat) && Utilities.isValidDate(args[3], inputDateFormat)) {
+                            getStockHistoricalData(args[2], args[3]);
                         }
                     }
                     break;
                 case "i":
-                    if (args.length == 1) {
+                    if (args.length == 2) {
                         String todayDate = Utilities.getFormatedDate("yyyyMMdd", new Date().getTime());
                         System.out.println("Working with today's date: " + todayDate);
                         getIndicesHistoricalData(todayDate, todayDate);
-                    } else if (args.length == 3) {
-                        if (Utilities.isValidDate(args[1], inputDateFormat) && Utilities.isValidDate(args[2], inputDateFormat)) {
-                            getIndicesHistoricalData(args[1], args[2]);
+                    } else if (args.length == 4) {
+                        if (Utilities.isValidDate(args[2], inputDateFormat) && Utilities.isValidDate(args[3], inputDateFormat)) {
+                            getIndicesHistoricalData(args[2], args[3]);
                         }
                     }
                     break;
                 case "f":
-                    if (args.length == 1) {
+                    if (args.length == 2) {
                         String todayDate = Utilities.getFormatedDate("yyyyMMdd", new Date().getTime());
                         System.out.println("Working with today's date: " + todayDate);
                         getFNOHistoricalData(todayDate, todayDate);
-                    } else if (args.length == 3) {
-                        if (Utilities.isValidDate(args[1], inputDateFormat) && Utilities.isValidDate(args[2], inputDateFormat)) {
-                            getFNOHistoricalData(args[1], args[2]);
+                    } else if (args.length == 4) {
+                        if (Utilities.isValidDate(args[2], inputDateFormat) && Utilities.isValidDate(args[3], inputDateFormat)) {
+                            getFNOHistoricalData(args[2], args[3]);
                         }
                     }
                     break;
@@ -154,6 +154,7 @@ public class NSEData {
     static void usage() {
         System.out.println("usage: java -jar NSETools eif startdate enddate");
         System.out.println("e->imports equity, i->imports indices, f->imports futures and options");
+        System.out.println("name of properities file");
         System.out.println("startdate and enddate should be specified in yyyyMMdd format");
         System.out.println("If startdate and endate are not specified, current system date is used");
     }
@@ -598,18 +599,17 @@ public class NSEData {
                 stmt.setString(12, entry.getValue().PB);
                 stmt.setString(13, entry.getValue().dividendyield);
                 stmt.setString(14, entry.getValue().type);
-                //stmt.execute();
-                /*
+                stmt.execute();                
                  if ((i + 1) % 1000 == 0) {
                  stmt.executeBatch();
                  stmt.clearBatch();
                               
-                 }*/
+                 }
             } catch (Exception e) {
                 logger.log(Level.INFO, null, e);
             }
         }
-        //stmt.executeBatch();
+        stmt.executeBatch();
         conn.commit();
         stmt.close();
         System.out.println("Completed Equity Download for: " + dateString + " .Seconds to insert:" + (new Date().getTime() - startTime) / 1000);
