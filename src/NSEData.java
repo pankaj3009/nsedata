@@ -348,7 +348,7 @@ public class NSEData {
 
             int date1 = Integer.parseInt(startDate);
             int date2 = Integer.parseInt(endDate);
-            if (date1 < 20120221) {
+            if (date1 <= 20120221) {
                 //prior processing
                 //get data for 21 FEB 2012 - indices only
                 ArrayList<String> legacyIndices = new ArrayList<>();
@@ -389,7 +389,7 @@ public class NSEData {
                     if (sd.before(ddmmyyyyFormat.parse("21-02-2012")) && ed.after(ddmmyyyyFormat.parse("21-12-2012"))) {
                         ed = ddmmyyyyFormat.parse("21-02-2012");
                     }
-                    while (ed.before(ddmmyyyyFormat.parse("22-02-2012")) && ed.before(yyyyMMddFormat.parse(endDate))) {
+                    while (ed.before(ddmmyyyyFormat.parse("22-02-2012")) && !ed.after(yyyyMMddFormat.parse(endDate))) {
                         h.clear();
                         for (String index : legacyIndices) {//update OHLCV
                             index = index.replaceAll(" ", "%20");
@@ -440,9 +440,9 @@ public class NSEData {
                                                 String symbolData[] = line.split(",");
                                                 date = ddHMMMHyyyyFormat.parse(String.valueOf(symbolData[0]));
                                                 String dateString = ddMMMyyyyFormat.format(date).toUpperCase();
-                                                h.get(index).PE = symbolData != null && symbolData.length > 1 ? symbolData[1] : "";
-                                                h.get(index).PB = symbolData != null && symbolData.length > 2 ? symbolData[2] : "";
-                                                h.get(index).dividendyield = symbolData != null && symbolData.length > 3 ? symbolData[3] : "";
+                                                h.get(index).PE = symbolData != null && symbolData.length > 1 ? symbolData[1].trim() : "";
+                                                h.get(index).PB = symbolData != null && symbolData.length > 2 ? symbolData[2].trim() : "";
+                                                h.get(index).dividendyield = symbolData != null && symbolData.length > 3 ? symbolData[3].trim() : "";
                                             }
                                         }
                                     } else {
