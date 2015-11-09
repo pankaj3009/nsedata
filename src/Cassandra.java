@@ -28,6 +28,9 @@ public class Cassandra implements Runnable {
         this.time = time;
         this.metric = metric;
         this.symbol = symbol.replaceAll(" ", "").replaceAll("&", "");
+        if(symbol.equals("NIFTY50")){
+            this.symbol="NSENIFTY";
+        }
         if(symbol.equals("NIFTY")){
             this.symbol="NSENIFTY";
         }

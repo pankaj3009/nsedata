@@ -567,7 +567,11 @@ public class NSEData {
         int i = 0;
         for (Map.Entry<String, HistoricalData> entry : h.entrySet()) {
             try {
+                
                 entry.getValue().symbol = entry.getValue().symbol.replaceAll(" ", "");
+                if(entry.getValue().symbol.equals("NIFTY50")){
+                                   entry.getValue().symbol="CNXNIFTY";
+                }
                 //entry.getValue().writer(dateString + "_equity.csv");
                 entry.getValue().open = isNumeric(entry.getValue().open) ? entry.getValue().open : "0";
                 entry.getValue().high = isNumeric(entry.getValue().high) ? entry.getValue().high : "0";
