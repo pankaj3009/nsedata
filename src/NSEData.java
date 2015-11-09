@@ -537,7 +537,7 @@ public class NSEData {
 
         try {
             symbol = symbol.replaceAll(" ", "").replaceAll("&", "");
-            if (symbol.equals("NIFTY") || symbol.equalsIgnoreCase("CNXNifty")) {
+            if (symbol.equals("NIFTY") || symbol.equalsIgnoreCase("CNXNifty")|| symbol.equalsIgnoreCase("Nifty50")) {
                 symbol = "NSENIFTY";
             }
             if(!isNumeric(value)){
@@ -569,7 +569,7 @@ public class NSEData {
             try {
                 
                 entry.getValue().symbol = entry.getValue().symbol.replaceAll(" ", "");
-                if(entry.getValue().symbol.equals("NIFTY50")){
+                if(entry.getValue().symbol.equalsIgnoreCase("NIFTY50")){
                                    entry.getValue().symbol="CNXNIFTY";
                 }
                 //entry.getValue().writer(dateString + "_equity.csv");

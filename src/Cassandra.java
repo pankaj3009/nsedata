@@ -28,10 +28,10 @@ public class Cassandra implements Runnable {
         this.time = time;
         this.metric = metric;
         this.symbol = symbol.replaceAll(" ", "").replaceAll("&", "");
-        if(symbol.equals("NIFTY50")){
+        if(symbol.equalsIgnoreCase("NIFTY50")){
             this.symbol="NSENIFTY";
         }
-        if(symbol.equals("NIFTY")){
+        if(symbol.equalsIgnoreCase("NIFTY")){
             this.symbol="NSENIFTY";
         }
         this.expiry = expiry;
