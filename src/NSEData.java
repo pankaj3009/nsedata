@@ -234,6 +234,7 @@ public class NSEData {
             }else{
                Thread.sleep(60*5*1000);
                 attempt++;
+                logger.log(Level.INFO,"Attempt: {0}",new Object[]{attempt});
             }
             }
             if(attempt==attempts){
@@ -337,6 +338,7 @@ public class NSEData {
                     } else {
                         Thread.sleep(60*5*1000);
                         attempt++;
+                        logger.log(Level.INFO,"Attempt: {0}",new Object[]{attempt});
                     }
                 }
                 if(attempt==attempts){
