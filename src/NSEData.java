@@ -32,7 +32,6 @@ import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.LogManager;
 import java.util.logging.Logger;
-import java.util.zip.ZipEntry;
 import java.util.zip.ZipInputStream;
 
 /**
@@ -88,7 +87,7 @@ public class NSEData {
                 conn = DriverManager.getConnection("jdbc:mysql://" + sqlIP + "/" + sqlDatabase + "?rewriteBatchedStatements=true", sqlUserName, sqlPassword);
             }
             useFile = p.getProperty("fileoutput") != null ? Boolean.parseBoolean(p.getProperty("fileoutput")) : false;
-            attempts = p.getProperty("attempts") != null ? Integer.parseInt(p.getProperty("attemptsonurl")) : 1;
+            attempts = p.getProperty("attemptsonurl") != null ? Integer.parseInt(p.getProperty("attemptsonurl")) : 1;
             usage();
             String[] param = args[0].split("(?!^)");
 
@@ -149,102 +148,104 @@ public class NSEData {
     }
 
     static void getFNOHistoricalData(String startDate, String endDate) throws MalformedURLException, IOException, ParseException {
-       try{
-        Calendar start = Calendar.getInstance();
-        start.setTime(Utilities.parseDate("yyyyMMdd", startDate));
-        Calendar end = Calendar.getInstance();
-        end.setTime(Utilities.parseDate("yyyyMMdd", endDate));
-        SimpleDateFormat ddMMMyyyyFormat = new SimpleDateFormat("ddMMMyyyy");
-        SimpleDateFormat yyyyMMddFormat = new SimpleDateFormat("yyyyMMdd");
-        SimpleDateFormat ddMMMyyyHFormat = new SimpleDateFormat("dd-MMM-yyyy");
-        for (Date date = start.getTime(); !start.after(end); start.add(Calendar.DATE, 1)) {
-            //http://www.nseindia.com/content/historical/DERIVATIVES/2014/DEC/fo22DEC2014bhav.csv.zip
-            //http://www.nseindia.com/content/historical/DERIVATIVES/2014/DEC/fo22Dec2014bhav.csv.zip             
-            String dateString = ddMMMyyyyFormat.format(start.getTime()).toUpperCase();
-            String year = dateString.substring(5, 9);
-            String month = dateString.substring(2, 5).toUpperCase();
-            String nseTrades = String.format("http://www.nseindia.com/content/historical/DERIVATIVES/%s/%s/fo%sbhav.csv.zip", year, month, dateString);
-            URL nseTradesURL = new URL(nseTrades);
-            int attempt=0;
-            while(attempt<attempts){
-            if (getResponseCode(nseTrades) != 404) {
-                System.out.println("Parsing URL :" + nseTrades);
-                ZipInputStream zin = new ZipInputStream(nseTradesURL.openStream());
-                ZipEntry ze = zin.getNextEntry();
-                BufferedReader in = new BufferedReader(new InputStreamReader(zin, "UTF-8"));
-                String line;
-                ArrayList<HistoricalData> h = new ArrayList<>();
-                while ((line = in.readLine()) != null) {
-                    String symbolData[] = !line.isEmpty() ? line.split(",") : null;
-                    if (symbolData != null && symbolData.length >= 15 && !symbolData[1].equals("SYMBOL")) {
-                        String symbol = symbolData[1];
-                        String open = symbolData[5];
-                        String high = symbolData[6];
-                        String low = symbolData[7];
-                        String close = symbolData[8];
-                        String settlePrice = symbolData[9];
-                        String volume = symbolData[10];
-                        String openInterest = symbolData[12];
-                        String expiry = yyyyMMddFormat.format(ddMMMyyyHFormat.parse(symbolData[2]));
-                        String strike = symbolData[3];
-                        String optionType = symbolData[4];
-                        h.add(new HistoricalData(start.getTime(), symbol, open, high, low, close, settlePrice, volume, openInterest, expiry, strike, optionType));
-                    }
-                }
-                //data starts from 20000707
-                if (useCassandra) {
-                    for (HistoricalData hist : h) {
-                        if (hist.optionStrike == null) {
-                            if (Double.valueOf(hist.open) > 0) {
-                                Cassandra(hist.open, hist.dateFormat.getTime(), cassandraFutureMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                Cassandra(hist.high, hist.dateFormat.getTime(), cassandraFutureMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                Cassandra(hist.low, hist.dateFormat.getTime(), cassandraFutureMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-
-                            } else {
-                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-
+        try {
+            Calendar start = Calendar.getInstance();
+            start.setTime(Utilities.parseDate("yyyyMMdd", startDate));
+            Calendar end = Calendar.getInstance();
+            end.setTime(Utilities.parseDate("yyyyMMdd", endDate));
+            SimpleDateFormat ddMMMyyyyFormat = new SimpleDateFormat("ddMMMyyyy");
+            SimpleDateFormat yyyyMMddFormat = new SimpleDateFormat("yyyyMMdd");
+            SimpleDateFormat ddMMMyyyHFormat = new SimpleDateFormat("dd-MMM-yyyy");
+            for (Date date = start.getTime(); !start.after(end); start.add(Calendar.DATE, 1)) {
+                //http://www.nseindia.com/content/historical/DERIVATIVES/2014/DEC/fo22DEC2014bhav.csv.zip
+                //http://www.nseindia.com/content/historical/DERIVATIVES/2014/DEC/fo22Dec2014bhav.csv.zip             
+                String dateString = ddMMMyyyyFormat.format(start.getTime()).toUpperCase();
+                String year = dateString.substring(5, 9);
+                String month = dateString.substring(2, 5).toUpperCase();
+                String nseTrades = String.format("http://www.nseindia.com/content/historical/DERIVATIVES/%s/%s/fo%sbhav.csv.zip", year, month, dateString);
+                URL nseTradesURL = new URL(nseTrades);
+                int attempt = 0;
+                while (attempt < attempts) {
+                    if (getResponseCode(nseTrades) != 404) {
+                        System.out.println("Parsing URL :" + nseTrades);
+                        logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
+                        ZipInputStream zin = new ZipInputStream(nseTradesURL.openStream());
+                        zin.getNextEntry();
+                        String line;
+                        ArrayList<HistoricalData> h = new ArrayList<>();
+                        Scanner sc = new Scanner(zin);
+                        while (sc.hasNextLine()) {
+                            line=sc.nextLine();
+                            String symbolData[] = !line.isEmpty() ? line.split(",") : null;
+                            if (symbolData != null && symbolData.length >= 15 && !symbolData[1].equals("SYMBOL")) {
+                                String symbol = symbolData[1];
+                                String open = symbolData[5];
+                                String high = symbolData[6];
+                                String low = symbolData[7];
+                                String close = symbolData[8];
+                                String settlePrice = symbolData[9];
+                                String volume = symbolData[10];
+                                String openInterest = symbolData[12];
+                                String expiry = yyyyMMddFormat.format(ddMMMyyyHFormat.parse(symbolData[2]));
+                                String strike = symbolData[3];
+                                String optionType = symbolData[4];
+                                h.add(new HistoricalData(start.getTime(), symbol, open, high, low, close, settlePrice, volume, openInterest, expiry, strike, optionType));
                             }
-                            Cassandra(hist.volume, hist.dateFormat.getTime(), cassandraFutureMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.openInterest, hist.dateFormat.getTime(), cassandraFutureMetric + ".oi", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.last, hist.dateFormat.getTime(), cassandraFutureMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                        } else {
-                            if (Double.valueOf(hist.open) > 0) {
-                                Cassandra(hist.open, hist.dateFormat.getTime(), cassandraOptionMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                Cassandra(hist.high, hist.dateFormat.getTime(), cassandraOptionMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                Cassandra(hist.low, hist.dateFormat.getTime(), cassandraOptionMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            } else {
-                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            }
-                            Cassandra(hist.volume, hist.dateFormat.getTime(), cassandraOptionMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.openInterest, hist.dateFormat.getTime(), cassandraOptionMetric + ".oi", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                            Cassandra(hist.last, hist.dateFormat.getTime(), cassandraOptionMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-
                         }
+                        //data starts from 20000707
+                        if (useCassandra) {
+                            for (HistoricalData hist : h) {
+                                if (hist.optionStrike == null) {
+                                    if (Double.valueOf(hist.open) > 0) {
+                                        Cassandra(hist.open, hist.dateFormat.getTime(), cassandraFutureMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                        Cassandra(hist.high, hist.dateFormat.getTime(), cassandraFutureMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                        Cassandra(hist.low, hist.dateFormat.getTime(), cassandraFutureMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                        Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+
+                                    } else {
+                                        Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                        Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                        Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                        Cassandra(hist.close, hist.dateFormat.getTime(), cassandraFutureMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+
+                                    }
+                                    Cassandra(hist.volume, hist.dateFormat.getTime(), cassandraFutureMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.openInterest, hist.dateFormat.getTime(), cassandraFutureMetric + ".oi", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.last, hist.dateFormat.getTime(), cassandraFutureMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                } else {
+                                    if (Double.valueOf(hist.open) > 0) {
+                                        Cassandra(hist.open, hist.dateFormat.getTime(), cassandraOptionMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                        Cassandra(hist.high, hist.dateFormat.getTime(), cassandraOptionMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                        Cassandra(hist.low, hist.dateFormat.getTime(), cassandraOptionMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                        Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    } else {
+                                        Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                        Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                        Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                        Cassandra(hist.close, hist.dateFormat.getTime(), cassandraOptionMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    }
+                                    Cassandra(hist.volume, hist.dateFormat.getTime(), cassandraOptionMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.openInterest, hist.dateFormat.getTime(), cassandraOptionMetric + ".oi", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.last, hist.dateFormat.getTime(), cassandraOptionMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+
+                                }
+                            }
+                        }
+                        break;
+                    } else {
+                        Thread.sleep(60 * 5 * 1000);
+                        attempt++;
+                        logger.log(Level.INFO, "Attempt: {0}", new Object[]{attempt});
                     }
                 }
-                break;
-            }else{
-               Thread.sleep(60*5*1000);
-                attempt++;
-                logger.log(Level.INFO,"Attempt: {0}",new Object[]{attempt});
+                if (attempt == attempts) {
+                    Thread t = new Thread(new Mail("psharma@incurrency.com", "Could not retrieve fno data from nse", "NSE Data Alert"));
+                    t.start();
+                }
             }
-            }
-            if(attempt==attempts){
-                Thread t = new Thread(new Mail("psharma@incurrency.com","Could not retrieve fno data from nse", "NSE Data Alert"));
-            t.start();
-            }
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, null, e);
         }
-       }catch (Exception e){
-           logger.log(Level.SEVERE,null,e);
-       }
     }
 
     static void getStockHistoricalData(String startDate, String endDate) throws MalformedURLException {
@@ -262,18 +263,20 @@ public class NSEData {
                 String year = dateString.substring(5, 9);
                 String month = dateString.substring(2, 5).toUpperCase();
                 String day = dateString.substring(0, 2);
-                String nseTrades = String.format("http://www.nseindia.com/content/historical/EQUITIES/%s/%s/cm%sbhav.csv.zip", year, month, dateString);
+                String nseTrades = String.format("https://www.nseindia.com/content/historical/EQUITIES/%s/%s/cm%sbhav.csv.zip", year, month, dateString);
                 URL nseTradesURL = new URL(nseTrades);
                 int attempt = 0;
                 while (attempt < attempts) {
                     if (getResponseCode(nseTrades) != 404) {
                         System.out.println("Parsing URL :" + nseTrades);
+                        logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
                         ZipInputStream zin = new ZipInputStream(nseTradesURL.openStream());
-                        ZipEntry ze = zin.getNextEntry();
-                        BufferedReader in = new BufferedReader(new InputStreamReader(zin, "UTF-8"));
+                        zin.getNextEntry();
                         String line;
                         HashMap<String, HistoricalData> h = new HashMap<>();
-                        while ((line = in.readLine()) != null) {
+                        Scanner sc = new Scanner(zin);
+                        while (sc.hasNextLine()) {
+                            line = sc.nextLine();
                             String symbolData[] = !line.isEmpty() ? line.split(",") : null;
                             try {
                                 if (symbolData != null && (symbolData[1].equals("EQ") || symbolData[1].equals("EQ") || symbolData[1].equals("EQ") || symbolData[1].equals("BE") || symbolData[1].equals("EQ") || symbolData[1].equals("BT"))) {
@@ -294,7 +297,8 @@ public class NSEData {
                         nseTradesURL = new URL(nseTrades);
                         if (getResponseCode(nseTrades) != 404) {
                             System.out.println("Parsing URL :" + nseTrades);
-                            in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
+                             logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
+                            BufferedReader in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
                             int j = 0;
                             int rowsToSkip = 4;
                             while ((line = in.readLine()) != null) {
@@ -336,14 +340,14 @@ public class NSEData {
 
                         break;
                     } else {
-                        Thread.sleep(60*5*1000);
+                        Thread.sleep(60 * 5 * 1000);
                         attempt++;
-                        logger.log(Level.INFO,"Attempt: {0}",new Object[]{attempt});
+                        logger.log(Level.INFO, "Attempt: {0}", new Object[]{attempt});
                     }
                 }
-                if(attempt==attempts){
-                Thread t = new Thread(new Mail("psharma@incurrency.com","Could not retrieve cash equity data from nse", "NSE Data Alert"));
-                t.start();
+                if (attempt == attempts) {
+                    Thread t = new Thread(new Mail("psharma@incurrency.com", "Could not retrieve cash equity data from nse", "NSE Data Alert"));
+                    t.start();
                 }
             } catch (Exception e) {
                 logger.log(Level.SEVERE, null, e);
@@ -368,6 +372,7 @@ public class NSEData {
                 URL nseTradesURL = new URL(nseTrades);
                 if (getResponseCode(nseTrades) != 404) {
                     System.out.println("Parsing URL :" + nseTrades);
+                    logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
                     BufferedReader in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
                     HashMap<String, HistoricalData> h = new HashMap<>();
                     HashMap<String, HistoricalData> hdate = new HashMap<>();
@@ -542,11 +547,11 @@ public class NSEData {
                         }
                         break;
                     } else {
-                        Thread.sleep(60*5*1000);
+                        Thread.sleep(60 * 5 * 1000);
                         attempt++;
                     }
                 }
-                if(attempt==attempts){
+                if (attempt == attempts) {
                     //email error;
                 }
             }
