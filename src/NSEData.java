@@ -297,7 +297,6 @@ public class NSEData {
                         nseTradesURL = new URL(nseTrades);
                         if (getResponseCode(nseTrades) != 404) {
                             System.out.println("Parsing URL :" + nseTrades);
-                             logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
                             BufferedReader in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
                             int j = 0;
                             int rowsToSkip = 4;
@@ -448,6 +447,7 @@ public class NSEData {
                                     nseTradesURL = new URL(nseTrades);
                                     if (getResponseCode(nseTrades) != 404) {
                                         System.out.println("Parsing URL :" + nseTrades);
+                                        logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});                      
                                         in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
                                         j = 0;
                                         rowsToSkip = 1;
