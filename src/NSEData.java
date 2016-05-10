@@ -414,6 +414,7 @@ public class NSEData {
                             nseTradesURL = new URL(nseTrades);
                             if (getResponseCode(nseTrades) != 404) {
                                 System.out.println("Parsing URL :" + nseTrades);
+                                logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
                                 try {
                                     in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
                                 } catch (Exception e) {
