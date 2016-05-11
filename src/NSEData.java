@@ -4,17 +4,26 @@
  */
 
 import java.io.BufferedReader;
+import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.FileReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.io.PrintStream;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.Socket;
 import java.net.URL;
+import java.nio.channels.Channels;
+import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.Security;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.PreparedStatement;
@@ -507,13 +516,21 @@ public class NSEData {
 
                 Date date = inputFormat.parse(String.valueOf(i));
                 String dateString = ddMMyyyyFormat.format(date).toUpperCase();
-                String nseTrades = String.format("http://www.nseindia.com/content/indices/ind_close_all_%s.csv", dateString);
+                String nseTrades = String.format("https://www1.nseindia.com/content/indices/ind_close_all_%s.csv", dateString);
                 URL nseTradesURL = new URL(nseTrades);
                 int attempt = 0;
+                System.setProperty("java.protocol.handler.pkgs","com.sun.net.ssl.internal.www.protocol");
+                Security.addProvider(new com.sun.net.ssl.internal.ssl.Provider());
                 while (attempt < attempts) {
                     if (getResponseCode(nseTrades) != 404) {
-                        dateString = inputFormat.format(date).toUpperCase();//conver to ddMMMyyyy format for writing
-                        BufferedReader in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
+                     logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
+                     String downloadedFile=download(nseTrades, null);
+                     dateString = inputFormat.format(date).toUpperCase();//conver to ddMMMyyyy format for writing
+                        BufferedReader in= new BufferedReader(new FileReader(downloadedFile));
+                        /*
+                        InputStreamReader is=new InputStreamReader(nseTradesURL.openStream());
+                        BufferedReader in = new BufferedReader(is);
+                        */
                         String line;
                         HashMap<String, HistoricalData> h = new HashMap<>();
                         int j = 0;
@@ -560,7 +577,75 @@ public class NSEData {
             logger.log(Level.SEVERE, null, e);
         }
     }
+    
+    static void saveToDisk(String fileURL,String fileName) throws MalformedURLException, IOException{
+        URL url = new URL(fileURL);
+        HttpURLConnection httpConn = (HttpURLConnection) url.openConnection();
+       httpConn.setRequestProperty("REFERRER", "http://www1.nseindia.com/products/content/equities/indices/homepage_indices.htm");
+        int responseCode = httpConn.getResponseCode();
+         if (responseCode !=403) {
+            //nputStreamReader in = new InputStreamReader(url.openStream(),"UTF_8");
+             InputStream inputStream = httpConn.getInputStream();
+             copyInputStreamToFile(inputStream,fileName);
+             FileOutputStream outputStream = new FileOutputStream(fileName);
+                         int bytesRead = -1;
+            byte[] buffer = new byte[2];
+            while ((bytesRead = inputStream.read(buffer)) != -1) {
+                outputStream.write(buffer, 0, bytesRead);
+            }
+              outputStream.close();
+            inputStream.close();
+             httpConn.disconnect();
+         }     
+    }
 
+    
+      static String download(String fileURL, String destinationDirectory) throws IOException {
+        // File name that is being downloaded
+        String downloadedFileName = fileURL.substring(fileURL.lastIndexOf("/")+1);
+         
+        // Open connection to the file
+        URL url = new URL(fileURL);
+        InputStream is = url.openStream();
+        // Stream to the destionation file
+        FileOutputStream fos;
+        if(destinationDirectory==null){// save to working folder
+        fos = new FileOutputStream(downloadedFileName);            
+        }else{
+        fos = new FileOutputStream(destinationDirectory + "/" + downloadedFileName);
+        }
+        // Read bytes from URL to the local file
+        byte[] buffer = new byte[4096];
+        int bytesRead = 0;
+         
+        System.out.print("Downloading " + downloadedFileName);
+        while ((bytesRead = is.read(buffer)) != -1) {
+            System.out.print(".");  // Progress bar :)
+            fos.write(buffer,0,bytesRead);
+        }
+        System.out.println("done!");
+  
+        // Close destination stream
+        fos.close();
+        // Close URL stream
+        is.close();
+        return downloadedFileName;
+    } 
+
+    private static void copyInputStreamToFile( InputStream in, String file ) {
+    try {
+        OutputStream out = new FileOutputStream(new File(file));
+        byte[] buf = new byte[1024];
+        int len;
+        while((len=in.read(buf))>0){
+            out.write(buf,0,len);
+        }
+        out.close();
+        in.close();
+    } catch (Exception e) {
+        e.printStackTrace();
+    }
+}
     static void Cassandra(String value, long time, String metric, String symbol, String expiry, String strike, String optionType, PrintStream output) {
 
         try {
