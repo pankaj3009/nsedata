@@ -17,11 +17,8 @@ import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.Socket;
 import java.net.URL;
-import java.nio.channels.Channels;
-import java.nio.channels.ReadableByteChannel;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.Security;
 import java.sql.Connection;
@@ -171,18 +168,18 @@ public class NSEData {
                 String dateString = ddMMMyyyyFormat.format(start.getTime()).toUpperCase();
                 String year = dateString.substring(5, 9);
                 String month = dateString.substring(2, 5).toUpperCase();
-                String nseTrades = String.format("http://www.nseindia.com/content/historical/DERIVATIVES/%s/%s/fo%sbhav.csv.zip", year, month, dateString);
+                String nseTrades = String.format("https://www.nseindia.com/content/historical/DERIVATIVES/%s/%s/fo%sbhav.csv.zip", year, month, dateString);
                 URL nseTradesURL = new URL(nseTrades);
                 int attempt = 0;
                 while (attempt < attempts) {
                     if (getResponseCode(nseTrades) != 404) {
                         System.out.println("Parsing URL :" + nseTrades);
-                        logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
                         ZipInputStream zin = new ZipInputStream(nseTradesURL.openStream());
                         zin.getNextEntry();
                         String line;
                         ArrayList<HistoricalData> h = new ArrayList<>();
                         Scanner sc = new Scanner(zin);
+                        int recordsReceived=0;
                         while (sc.hasNextLine()) {
                             line=sc.nextLine();
                             String symbolData[] = !line.isEmpty() ? line.split(",") : null;
@@ -199,8 +196,10 @@ public class NSEData {
                                 String strike = symbolData[3];
                                 String optionType = symbolData[4];
                                 h.add(new HistoricalData(start.getTime(), symbol, open, high, low, close, settlePrice, volume, openInterest, expiry, strike, optionType));
+                                recordsReceived++;
                             }
                         }
+                        logger.log(Level.INFO,"Parsing URL: {0}, Records Received:{1}",new Object[]{nseTrades,recordsReceived});
                         //data starts from 20000707
                         if (useCassandra) {
                             for (HistoricalData hist : h) {
@@ -278,12 +277,12 @@ public class NSEData {
                 while (attempt < attempts) {
                     if (getResponseCode(nseTrades) != 404) {
                         System.out.println("Parsing URL :" + nseTrades);
-                        logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
                         ZipInputStream zin = new ZipInputStream(nseTradesURL.openStream());
                         zin.getNextEntry();
                         String line;
                         HashMap<String, HistoricalData> h = new HashMap<>();
                         Scanner sc = new Scanner(zin);
+                        int recordsReceived=0;
                         while (sc.hasNextLine()) {
                             line = sc.nextLine();
                             String symbolData[] = !line.isEmpty() ? line.split(",") : null;
@@ -292,13 +291,14 @@ public class NSEData {
                                     //see legend here http://www.nseindia.com/content/equities/eq_serieslist.htm
                                     //write to file/database
                                     h.put(symbolData[0], new HistoricalData(inputFormat.format(date).toUpperCase(), symbolData[0], symbolData[2], symbolData[3], symbolData[4], symbolData[5], symbolData[6], symbolData[8]));
-
+                                    recordsReceived++;
                                 }
                             } catch (Exception e) {
                                 System.out.println("Error at Line:" + line);
                                 logger.log(Level.SEVERE, null, e);
                             }
                         }
+                        logger.log(Level.INFO,"Parsing URL: {0}. Records Received:{1}",new Object[]{nseTrades,recordsReceived});
                         //get delivery quantity
                         requiredFormat = new SimpleDateFormat("ddMMyyyy");
                         dateString = requiredFormat.format(date);
