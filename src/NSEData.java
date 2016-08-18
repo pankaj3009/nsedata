@@ -363,13 +363,13 @@ public class NSEData {
                             for (HistoricalData hist : h.values()) {
                                 SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
                                 long time = formatter.parse(hist.date).getTime();
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"open",hist.open,time);
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"high",hist.high,time);
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"low",hist.low,time);
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"close",hist.last,time);
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"settle",hist.close,time);
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"volume",hist.volume,time);
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"deliverable",hist.deliverable,time);
+                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"OPEN",hist.open,time);
+                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"HIGH",hist.high,time);
+                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"LOW",hist.low,time);
+                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"CLOSE",hist.last,time);
+                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"SETTLE",hist.close,time);
+                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"VOLUME",hist.volume,time);
+                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"DELIVERED",hist.deliverable,time);
                             }
                         }
                         if (useFile) {
