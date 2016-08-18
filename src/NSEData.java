@@ -169,9 +169,9 @@ public class NSEData {
         return new JedisPool(new JedisPoolConfig(),uri, port,2000,null,database);
     }
     
-    public static long insert(String key, long order,String value){
+    public static long insert(String key, String value,long time){
          try (Jedis jedis = jPool.getResource()) {
-            return jedis.zadd(key, order, value);
+            return jedis.zadd(key,Double.valueOf(value), String.valueOf(time));
         }
     }
     
@@ -332,7 +332,7 @@ public class NSEData {
                         //get delivery quantity
                         requiredFormat = new SimpleDateFormat("ddMMyyyy");
                         dateString = requiredFormat.format(date);
-                        nseTrades = String.format("http://www.nseindia.com/archives/equities/mto/MTO_%s.DAT", dateString);
+                        nseTrades = String.format("https://www.nseindia.com/archives/equities/mto/MTO_%s.DAT", dateString);
                         nseTradesURL = new URL(nseTrades);
                         if (getResponseCode(nseTrades) != 404) {
                             System.out.println("Parsing URL :" + nseTrades);
@@ -363,13 +363,13 @@ public class NSEData {
                             for (HistoricalData hist : h.values()) {
                                 SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
                                 long time = formatter.parse(hist.date).getTime();
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"open",time,hist.open);
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"high",time,hist.high);
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"low",time,hist.low);
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"close",time,hist.last);
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"settle",time,hist.close);
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"volume",time,hist.volume);
-                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"deliverable",time,hist.deliverable);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"open",hist.open,time);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"high",hist.high,time);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"low",hist.low,time);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"close",hist.last,time);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"settle",hist.close,time);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"volume",hist.volume,time);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"deliverable",hist.deliverable,time);
                             }
                         }
                         if (useFile) {
