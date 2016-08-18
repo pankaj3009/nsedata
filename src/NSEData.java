@@ -39,6 +39,9 @@ import java.util.logging.Level;
 import java.util.logging.LogManager;
 import java.util.logging.Logger;
 import java.util.zip.ZipInputStream;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
 
 /**
  *
@@ -51,6 +54,11 @@ public class NSEData {
      */
     private static final Logger logger = Logger.getLogger(NSEData.class.getName());
     private static Connection conn;
+    /*redis parameters*/
+    private static String redisIP;
+    private static String redisPort;
+    private static String redisDB;
+    
     private static String cassandraIP;
     private static String cassandraPort;
     private static String cassandraEquityMetric;
@@ -62,9 +70,12 @@ public class NSEData {
     private static String sqlTable;
     private static boolean useSQL = false;
     private static boolean useCassandra = false;
+    private static boolean useRedis = false;
     private static boolean useFile = false;
     private static int attempts = 1;
+    private static JedisPool jPool;
 
+                   
     public static void main(String[] args) throws MalformedURLException, ClassNotFoundException, SQLException, IOException, ParseException {
         try {
             SimpleDateFormat inputDateFormat = new SimpleDateFormat("yyyyMMdd");
@@ -92,6 +103,15 @@ public class NSEData {
                 useSQL = true;
                 conn = DriverManager.getConnection("jdbc:mysql://" + sqlIP + "/" + sqlDatabase + "?rewriteBatchedStatements=true", sqlUserName, sqlPassword);
             }
+            redisIP = p.getProperty("redisconnection");
+            redisPort = p.getProperty("redisport");
+            redisDB = p.getProperty("redisdatabase");
+            
+            if (redisIP != null && redisPort != null && redisDB != null) {
+                jPool=RedisConnect(redisIP, Integer.valueOf(redisPort), Integer.valueOf(redisDB));
+                useRedis=true;                
+            }
+            
             useFile = p.getProperty("fileoutput") != null ? Boolean.parseBoolean(p.getProperty("fileoutput")) : false;
             attempts = p.getProperty("attemptsonurl") != null ? Integer.parseInt(p.getProperty("attemptsonurl")) : 1;
             usage();
@@ -145,6 +165,16 @@ public class NSEData {
         }
     }
 
+    public static JedisPool RedisConnect(String uri, Integer port, Integer database) {
+        return new JedisPool(new JedisPoolConfig(),uri, port,2000,null,database);
+    }
+    
+    public static long insert(String key, long order,String value){
+         try (Jedis jedis = jPool.getResource()) {
+            return jedis.zadd(key, order, value);
+        }
+    }
+    
     static void usage() {
         System.out.println("usage: java -jar NSETools ief startdate enddate");
         System.out.println("e->imports equity, i->imports indices, f->imports futures and options");
@@ -328,6 +358,19 @@ public class NSEData {
                         }
                         if (useSQL) {
                             writeToSQL(inputFormat.format(date).toUpperCase(), h);
+                        }
+                        if(useRedis){
+                            for (HistoricalData hist : h.values()) {
+                                SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
+                                long time = formatter.parse(hist.date).getTime();
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"open",time,hist.open);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"high",time,hist.high);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"low",time,hist.low);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"close",time,hist.last);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"settle",time,hist.close);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"volume",time,hist.volume);
+                                insert("daily:"+hist.symbol.toLowerCase().trim()+":"+"deliverable",time,hist.deliverable);
+                            }
                         }
                         if (useFile) {
                             writeToFile(inputFormat.format(date).toUpperCase(), h);
