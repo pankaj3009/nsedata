@@ -19,7 +19,9 @@ import java.net.Socket;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
+import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.nio.file.StandardCopyOption;
 import java.security.Security;
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -38,6 +40,8 @@ import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.LogManager;
 import java.util.logging.Logger;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
 import redis.clients.jedis.Jedis;
 import redis.clients.jedis.JedisPool;
@@ -54,6 +58,7 @@ public class NSEData {
      */
     private static final Logger logger = Logger.getLogger(NSEData.class.getName());
     private static Connection conn;
+    private static int pausebetweenattempts=0;
     /*redis parameters*/
     private static String redisIP;
     private static String redisPort;
@@ -74,6 +79,7 @@ public class NSEData {
     private static boolean useFile = false;
     private static int attempts = 1;
     private static JedisPool jPool;
+    private static String shaInsert="";
 
                    
     public static void main(String[] args) throws MalformedURLException, ClassNotFoundException, SQLException, IOException, ParseException {
@@ -83,6 +89,7 @@ public class NSEData {
             LogManager.getLogManager().readConfiguration(configFile);
             Class.forName("com.mysql.jdbc.Driver");
             Properties p = Utilities.loadParameters(args[1]);
+            pausebetweenattempts=Integer.valueOf(p.getProperty("pausebetweenattempts", "5"));
             cassandraIP = p.getProperty("cassandraconnection");
             cassandraPort = p.getProperty("cassandraport");
             cassandraEquityMetric = p.getProperty("equity");
@@ -168,13 +175,56 @@ public class NSEData {
     public static JedisPool RedisConnect(String uri, Integer port, Integer database) {
         return new JedisPool(new JedisPoolConfig(),uri, port,2000,null,database);
     }
-    
-    public static long insert(String key, String value,long time){
+    /*
+    public static Object insert(String key, String value,long time){
+        List<String> keyArray=new ArrayList<>();
+        keyArray.add(key);
+        List valueArray=new ArrayList<>();
+        valueArray.add(String.valueOf(time));
+        valueArray.add(value);
          try (Jedis jedis = jPool.getResource()) {
-            return jedis.zadd(key,Double.valueOf(value), String.valueOf(time));
+             if(jedis.scriptExists(shaInsert)){
+             return jedis.evalsha(shaInsert, keyArray, valueArray);                 
+             }else{
+                 shaInsert=jedis.scriptLoad("local value = cmsgpack.pack({ARGV[2], ARGV[1]}) redis.call('zadd', KEYS[1], ARGV[1], value) return redis.status_reply('ok')");
+                 return jedis.evalsha(shaInsert, keyArray, valueArray);                 
+             }
         }
     }
-    
+    */
+    /*
+    public static Object insert(String key, String value,long time){
+         try (Jedis jedis = jPool.getResource()) {
+          return jedis.hset(key, String.valueOf(time), value);
+         } 
+    }
+*/
+        public static Object insert(String key, List<String> value,long time){
+        List<String> keyArray=new ArrayList<>();
+        keyArray.add(key);
+        value.add(0,String.valueOf(time));
+        int count=value.size();
+        String concat="cmsgpack.pack({";
+        for(int i=0;i<count;i++){
+            if(i==0){
+                concat=concat+"ARGV["+(i+1)+"]";
+            }else{
+                concat=concat+",ARGV["+(i+1)+"]";
+            }
+        }
+        concat=concat+"})";
+        
+         try (Jedis jedis = jPool.getResource()) {
+             if(jedis.scriptExists(shaInsert)){
+             return jedis.evalsha(shaInsert, keyArray, value);                 
+             }else{
+                 //shaInsert=jedis.scriptLoad("local value = cmsgpack.pack({ARGV[2], ARGV[1]}) redis.call('zadd', KEYS[1], ARGV[1], value) return redis.status_reply('ok')");
+                 shaInsert=jedis.scriptLoad("local value ="+ concat+" redis.call('zadd', KEYS[1], ARGV[1], value) return redis.status_reply('ok')");
+                 return jedis.evalsha(shaInsert, keyArray, value);  
+             }
+        }
+    }
+        
     static void usage() {
         System.out.println("usage: java -jar NSETools ief startdate enddate");
         System.out.println("e->imports equity, i->imports indices, f->imports futures and options");
@@ -202,7 +252,7 @@ public class NSEData {
                 URL nseTradesURL = new URL(nseTrades);
                 int attempt = 0;
                 while (attempt < attempts) {
-                    if (getResponseCode(nseTrades) != 404) {
+                    if (getResponseCode(nseTrades,null) != 404) {
                         System.out.println("Parsing URL :" + nseTrades);
                         ZipInputStream zin = new ZipInputStream(nseTradesURL.openStream());
                         zin.getNextEntry();
@@ -271,7 +321,7 @@ public class NSEData {
                         }
                         break;
                     } else {
-                        Thread.sleep(60 * 5 * 1000);
+                        Thread.sleep(60 * pausebetweenattempts * 1000);
                         attempt++;
                         logger.log(Level.INFO, "Attempt: {0}", new Object[]{attempt});
                     }
@@ -303,12 +353,21 @@ public class NSEData {
                 String day = dateString.substring(0, 2);
                 String nseTrades = String.format("https://www.nseindia.com/content/historical/EQUITIES/%s/%s/cm%sbhav.csv.zip", year, month, dateString);
                 URL nseTradesURL = new URL(nseTrades);
+                
                 int attempt = 0;
                 while (attempt < attempts) {
-                    if (getResponseCode(nseTrades) != 404) {
+                    if (getResponseCode(nseTrades,"https://nseindia.com/products/content/equities/equities/archieve_eq.htm") != 404) {
                         System.out.println("Parsing URL :" + nseTrades);
-                        ZipInputStream zin = new ZipInputStream(nseTradesURL.openStream());
-                        zin.getNextEntry();
+                        //String fileName="equity_"+dateString+".zip";
+                        String fileName=inputFormat.format(date).toUpperCase()+"_equity.zip";
+                        if(!new File("logs/"+fileName).exists()){
+                        saveToDisk(nseTrades,fileName,"https://nseindia.com/products/content/equities/equities/archieve_eq.htm");
+                        }
+                        ZipFile zipFile=new ZipFile("logs/"+fileName);
+                        
+                        ZipEntry entry = zipFile.entries().nextElement();
+                        InputStream zin = zipFile.getInputStream(entry);
+                        //zin.getNextEntry();
                         String line;
                         HashMap<String, HistoricalData> h = new HashMap<>();
                         Scanner sc = new Scanner(zin);
@@ -334,9 +393,15 @@ public class NSEData {
                         dateString = requiredFormat.format(date);
                         nseTrades = String.format("https://www.nseindia.com/archives/equities/mto/MTO_%s.DAT", dateString);
                         nseTradesURL = new URL(nseTrades);
-                        if (getResponseCode(nseTrades) != 404) {
+                        if (getResponseCode(nseTrades,"https://nseindia.com/products/content/equities/equities/archieve_eq.htm") != 404) {
                             System.out.println("Parsing URL :" + nseTrades);
-                            BufferedReader in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
+                         fileName=inputFormat.format(date).toUpperCase()+"_delivered.dat";
+                         if(!new File("logs/"+fileName).exists()){
+                         saveToDisk(nseTrades,fileName,"https://nseindia.com/products/content/equities/equities/archieve_eq.htm");
+                         } 
+                         BufferedReader in = new BufferedReader(new FileReader(new File("logs/"+fileName)));
+                        //zin.getNextEntry();
+                            //BufferedReader in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
                             int j = 0;
                             int rowsToSkip = 4;
                             while ((line = in.readLine()) != null) {
@@ -363,13 +428,24 @@ public class NSEData {
                             for (HistoricalData hist : h.values()) {
                                 SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
                                 long time = formatter.parse(hist.date).getTime();
-                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"OPEN",hist.open,time);
-                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"HIGH",hist.high,time);
-                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"LOW",hist.low,time);
-                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"CLOSE",hist.last,time);
-                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"SETTLE",hist.close,time);
-                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"VOLUME",hist.volume,time);
-                                insert("daily:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"DELIVERED",hist.deliverable,time);
+                                /*
+                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"OPEN",hist.open,time);
+                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"HIGH",hist.high,time);
+                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"LOW",hist.low,time);
+                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"CLOSE",hist.last,time);
+                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"SETTLE",hist.close,time);
+                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"VOLUME",hist.volume,time);
+                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"DELIVERED",hist.deliverable,time);
+                            */
+                                ArrayList<String> value=new ArrayList<>();
+                                value.add(hist.open);
+                                value.add(hist.high);
+                                value.add(hist.low);
+                                value.add(hist.last);
+                                value.add(hist.close);
+                                value.add(hist.volume);
+                                value.add(hist.deliverable);
+                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___",value,time);
                             }
                         }
                         if (useFile) {
@@ -391,12 +467,13 @@ public class NSEData {
 
                         break;
                     } else {
-                        Thread.sleep(60 * 5 * 1000);
+                        Thread.sleep(60 * pausebetweenattempts * 1000);
                         attempt++;
                         logger.log(Level.INFO, "Attempt: {0}", new Object[]{attempt});
                     }
                 }
-                if (attempt == attempts) {
+ //               if (attempt == attempts) {
+                if(false){
                     Thread t = new Thread(new Mail("psharma@incurrency.com", "Could not retrieve cash equity data from nse", "NSE Data Alert"));
                     t.start();
                 }
@@ -421,7 +498,7 @@ public class NSEData {
                 ArrayList<String> legacyIndices = new ArrayList<>();
                 String nseTrades = String.format("http://www.nseindia.com/content/indices/ind_close_all_%s.csv", "21022012");
                 URL nseTradesURL = new URL(nseTrades);
-                if (getResponseCode(nseTrades) != 404) {
+                if (getResponseCode(nseTrades,null) != 404) {
                     System.out.println("Parsing URL :" + nseTrades);
                     logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
                     BufferedReader in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
@@ -463,7 +540,7 @@ public class NSEData {
                             index = index.replaceAll(" ", "%20");
                             nseTrades = String.format("http://www.nseindia.com/content/indices/histdata/%s%s-%s.csv", index, ddmmyyyyFormat.format(sd), ddmmyyyyFormat.format(ed));
                             nseTradesURL = new URL(nseTrades);
-                            if (getResponseCode(nseTrades) != 404) {
+                            if (getResponseCode(nseTrades,null) != 404) {
                                 System.out.println("Parsing URL :" + nseTrades);
                                 logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
                                 try {
@@ -497,7 +574,7 @@ public class NSEData {
                                     index = index.replaceAll(" ", "%20");
                                     nseTrades = String.format("http://www.nseindia.com/content/indices/histdata/%sall%s-TO-%s.csv", index, ddmmyyyyFormat.format(sd), ddmmyyyyFormat.format(ed));
                                     nseTradesURL = new URL(nseTrades);
-                                    if (getResponseCode(nseTrades) != 404) {
+                                    if (getResponseCode(nseTrades,null) != 404) {
                                         System.out.println("Parsing URL :" + nseTrades);
                                         logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});                      
                                         in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
@@ -565,7 +642,7 @@ public class NSEData {
                 System.setProperty("java.protocol.handler.pkgs","com.sun.net.ssl.internal.www.protocol");
                 Security.addProvider(new com.sun.net.ssl.internal.ssl.Provider());
                 while (attempt < attempts) {
-                    if (getResponseCode(nseTrades) != 404) {
+                    if (getResponseCode(nseTrades,null) != 404) {
                      logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
                      String downloadedFile=download(nseTrades, null);
                      dateString = inputFormat.format(date).toUpperCase();//conver to ddMMMyyyy format for writing
@@ -608,7 +685,7 @@ public class NSEData {
                         }
                         break;
                     } else {
-                        Thread.sleep(60 * 5 * 1000);
+                        Thread.sleep(60 * pausebetweenattempts * 1000);
                         attempt++;
                     }
                 }
@@ -621,25 +698,43 @@ public class NSEData {
         }
     }
     
-    static void saveToDisk(String fileURL,String fileName) throws MalformedURLException, IOException{
+    static void saveToDisk(String fileURL,String fileName,String referer) throws MalformedURLException, IOException{
         URL url = new URL(fileURL);
         HttpURLConnection httpConn = (HttpURLConnection) url.openConnection();
-       httpConn.setRequestProperty("REFERRER", "http://www1.nseindia.com/products/content/equities/indices/homepage_indices.htm");
+//       httpConn.setRequestProperty("REFERRER", "http://www1.nseindia.com/products/content/equities/indices/homepage_indices.htm");
+        if(referer!=null){
+        httpConn.setRequestProperty("referer", referer);            
+        httpConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36");
+        httpConn.setRequestProperty("Upgrade-Insecure-Requests", "1");
+        httpConn.setRequestProperty("Accept-Encoding","gzip, deflate, sdch, br" );
+            
+        }
+    
+//        httpConn.setRequestProperty("REFERRER", referer);
         int responseCode = httpConn.getResponseCode();
          if (responseCode !=403) {
             //nputStreamReader in = new InputStreamReader(url.openStream(),"UTF_8");
              InputStream inputStream = httpConn.getInputStream();
+             Path path=Paths.get("logs",fileName);
+//           FileOutputStream outputStream = new FileOutputStream(fileName);
+             
+            Files.copy(inputStream, path,StandardCopyOption.REPLACE_EXISTING);
+            inputStream.close();
+             httpConn.disconnect();
+         }   
+/*             
              copyInputStreamToFile(inputStream,fileName);
              FileOutputStream outputStream = new FileOutputStream(fileName);
                          int bytesRead = -1;
-            byte[] buffer = new byte[2];
+            byte[] buffer = new byte[1];
             while ((bytesRead = inputStream.read(buffer)) != -1) {
                 outputStream.write(buffer, 0, bytesRead);
             }
               outputStream.close();
             inputStream.close();
              httpConn.disconnect();
-         }     
+         }    
+     */
     }
 
     
@@ -806,7 +901,7 @@ public class NSEData {
         URL nseLink = new URL(nameChangeLink);
         int j = 0;
         int rowsToSkip = 1;
-        if (getResponseCode(nameChangeLink) != 404) {
+        if (getResponseCode(nameChangeLink,null) != 404) {
             BufferedReader in = new BufferedReader(new InputStreamReader(nseLink.openStream()));
 
             //write to database
@@ -853,9 +948,15 @@ public class NSEData {
         }
     }
 
-    public static int getResponseCode(String urlString) throws MalformedURLException, IOException {
+    public static int getResponseCode(String urlString,String referer) throws MalformedURLException, IOException {
         URL u = new URL(urlString);
         HttpURLConnection huc = (HttpURLConnection) u.openConnection();
+        if(referer!=null){
+        huc.setRequestProperty("referer", referer);            
+        huc.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36");
+        huc.setRequestProperty("Upgrade-Insecure-Requests", "1");
+        huc.setRequestProperty("Accept-Encoding","gzip, deflate, sdch, br" );
+        }
         huc.setRequestMethod("GET");
         huc.connect();
         return huc.getResponseCode();
