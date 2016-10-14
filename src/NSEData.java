@@ -43,9 +43,6 @@ import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
-import redis.clients.jedis.Jedis;
-import redis.clients.jedis.JedisPool;
-import redis.clients.jedis.JedisPoolConfig;
 
 /**
  *
@@ -78,7 +75,6 @@ public class NSEData {
     private static boolean useRedis = false;
     private static boolean useFile = false;
     private static int attempts = 1;
-    private static JedisPool jPool;
     private static String shaInsert="";
 
                    
@@ -114,11 +110,7 @@ public class NSEData {
             redisPort = p.getProperty("redisport");
             redisDB = p.getProperty("redisdatabase");
             
-            if (redisIP != null && redisPort != null && redisDB != null) {
-                jPool=RedisConnect(redisIP, Integer.valueOf(redisPort), Integer.valueOf(redisDB));
-                useRedis=true;                
-            }
-            
+           
             useFile = p.getProperty("fileoutput") != null ? Boolean.parseBoolean(p.getProperty("fileoutput")) : false;
             attempts = p.getProperty("attemptsonurl") != null ? Integer.parseInt(p.getProperty("attemptsonurl")) : 1;
             usage();
@@ -172,9 +164,6 @@ public class NSEData {
         }
     }
 
-    public static JedisPool RedisConnect(String uri, Integer port, Integer database) {
-        return new JedisPool(new JedisPoolConfig(),uri, port,2000,null,database);
-    }
     /*
     public static Object insert(String key, String value,long time){
         List<String> keyArray=new ArrayList<>();
@@ -199,32 +188,6 @@ public class NSEData {
          } 
     }
 */
-        public static Object insert(String key, List<String> value,long time){
-        List<String> keyArray=new ArrayList<>();
-        keyArray.add(key);
-        value.add(0,String.valueOf(time));
-        int count=value.size();
-        String concat="cmsgpack.pack({";
-        for(int i=0;i<count;i++){
-            if(i==0){
-                concat=concat+"ARGV["+(i+1)+"]";
-            }else{
-                concat=concat+",ARGV["+(i+1)+"]";
-            }
-        }
-        concat=concat+"})";
-        
-         try (Jedis jedis = jPool.getResource()) {
-             if(jedis.scriptExists(shaInsert)){
-             return jedis.evalsha(shaInsert, keyArray, value);                 
-             }else{
-                 //shaInsert=jedis.scriptLoad("local value = cmsgpack.pack({ARGV[2], ARGV[1]}) redis.call('zadd', KEYS[1], ARGV[1], value) return redis.status_reply('ok')");
-                 shaInsert=jedis.scriptLoad("local value ="+ concat+" redis.call('zadd', KEYS[1], ARGV[1], value) return redis.status_reply('ok')");
-                 return jedis.evalsha(shaInsert, keyArray, value);  
-             }
-        }
-    }
-        
     static void usage() {
         System.out.println("usage: java -jar NSETools ief startdate enddate");
         System.out.println("e->imports equity, i->imports indices, f->imports futures and options");
@@ -423,30 +386,6 @@ public class NSEData {
                         }
                         if (useSQL) {
                             writeToSQL(inputFormat.format(date).toUpperCase(), h);
-                        }
-                        if(useRedis){
-                            for (HistoricalData hist : h.values()) {
-                                SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
-                                long time = formatter.parse(hist.date).getTime();
-                                /*
-                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"OPEN",hist.open,time);
-                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"HIGH",hist.high,time);
-                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"LOW",hist.low,time);
-                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"CLOSE",hist.last,time);
-                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"SETTLE",hist.close,time);
-                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"VOLUME",hist.volume,time);
-                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___"+":"+"DELIVERED",hist.deliverable,time);
-                            */
-                                ArrayList<String> value=new ArrayList<>();
-                                value.add(hist.open);
-                                value.add(hist.high);
-                                value.add(hist.low);
-                                value.add(hist.last);
-                                value.add(hist.close);
-                                value.add(hist.volume);
-                                value.add(hist.deliverable);
-                                insert("DAILY:"+hist.symbol.toUpperCase().trim()+"_STK___",value,time);
-                            }
                         }
                         if (useFile) {
                             writeToFile(inputFormat.format(date).toUpperCase(), h);
