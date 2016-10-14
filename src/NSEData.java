@@ -784,6 +784,31 @@ public class NSEData {
         e.printStackTrace();
     }
 }
+        static void Cassandra(String value, long time, String metric, String symbol, String expiry, String strike, String optionType, PrintStream output) {
+
+        try {
+            symbol = symbol.replaceAll(" ", "");
+            if (!isNumeric(value)) {
+                value = "0";
+            }
+            if (expiry == null) {
+                output.print("put " + metric + " " + time + " " + value + " " + "symbol=" + symbol.toLowerCase() + System.getProperty("line.separator"));
+            } else if (strike == null) {
+                output.print("put " + metric + " " + time + " " + value + " " + "symbol=" + symbol.toLowerCase() + " " + "expiry=" + expiry + System.getProperty("line.separator"));
+            } else {
+                output.print("put " + metric + " " + time + " " + value + " " + "symbol=" + symbol.toLowerCase() + " " + "expiry=" + expiry + " " + "strike=" + strike + " " + "option=" + optionType + System.getProperty("line.separator"));
+            }
+
+
+        } catch (Exception ex) {
+            logger.log(Level.SEVERE, null, ex);
+        } finally {
+            //output.close();
+        }
+    }
+
+    
+  /*  
     static void Cassandra(String value, long time, String metric, String symbol, String expiry, String strike, String optionType, PrintStream output) {
 
         try {
@@ -809,7 +834,7 @@ public class NSEData {
             //output.close();
         }
     }
-
+*/
     static void writeToSQL(String dateString, HashMap<String, HistoricalData> h) throws SQLException {
         PreparedStatement stmt = null;
         conn.setAutoCommit(false);

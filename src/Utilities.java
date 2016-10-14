@@ -1,16 +1,29 @@
 
-
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.text.DecimalFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.Calendar;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Properties;
 import java.util.TimeZone;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import org.apache.http.HttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.ContentType;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
+import org.kairosdb.client.HttpClient;
+import org.kairosdb.client.builder.DataPoint;
+import org.kairosdb.client.builder.QueryBuilder;
+import org.kairosdb.client.builder.QueryMetric;
+import org.kairosdb.client.response.QueryResponse;
 
 /**
  * Date utility
@@ -23,6 +36,68 @@ public class Utilities {
     private static final long MILLI_SEC_PER_DAY = 1000 * 60 * 60 * 24;
     private static final Logger logger = Logger.getLogger(Utilities.class.getName());
 
+    public static HashMap<Long, String> getPrices(String exchangeSymbol, String expiry, String right, String optionStrike, Date startDate, Date endDate, String metric) {
+        HashMap<Long, String> out = new HashMap<>();
+        try {
+            HttpClient client = new HttpClient("http://" + "91.121.168.138" + ":8085");
+            String strike = Utilities.formatDouble(Utilities.getDouble(optionStrike, 0), new DecimalFormat("#.##"));
+            QueryBuilder builder = QueryBuilder.getInstance();
+            String symbol = null;
+            symbol = exchangeSymbol.replaceAll("[^A-Za-z0-9\\-]", "").toLowerCase();
+
+            builder.setStart(startDate)
+                    .setEnd(endDate)
+                    .addMetric(metric)
+                    .addTag("symbol", symbol);
+            if (expiry != null && !expiry.equals("")) {
+                builder.getMetrics().get(0).addTag("expiry", expiry);
+            }
+            if (right != null && !right.equals("")) {
+                builder.getMetrics().get(0).addTag("option", right);
+                builder.getMetrics().get(0).addTag("strike", strike);
+            }
+            builder.getMetrics().get(0).setOrder(QueryMetric.Order.DESCENDING);
+            long time = new Date().getTime();
+            QueryResponse response = client.query(builder);
+
+            List<DataPoint> dataPoints = response.getQueries().get(0).getResults().get(0).getDataPoints();
+            for (DataPoint dataPoint : dataPoints) {
+                long lastTime = dataPoint.getTimestamp();
+                out.put(lastTime, dataPoint.getValue().toString());
+            }
+        } catch (Exception e) {
+            logger.log(Level.INFO, null, e);
+        }
+        return out;
+    }
+
+    public static String formatDouble(double d, DecimalFormat df) {
+        return df.format(d);
+    }
+
+    public static double getDouble(Object input, double defvalue) {
+        try {
+            if (isDouble(input.toString())) {
+                return Double.parseDouble(input.toString().trim());
+            } else {
+                return defvalue;
+            }
+        } catch (Exception e) {
+            return defvalue;
+        }
+    }
+
+    public static boolean isDouble(String value) {
+        //String decimalPattern = "([0-9]*)\\.([0-9]*)";  
+        //return Pattern.matches(decimalPattern, value)||Pattern.matches("\\d*", value);
+        if (value != null) {
+            value = value.trim();
+            return value.matches("-?\\d+(\\.\\d+)?");
+        } else {
+            return false;
+        }
+    }
+
     public static long getCurrentTime() {
         return System.currentTimeMillis();
     }
@@ -33,14 +108,14 @@ public class Utilities {
                 + ((time < 1200) ? " AM" : " PM");
     }
 
-      public static Properties loadParameters(String parameterFile) throws FileNotFoundException, IOException {
+    public static Properties loadParameters(String parameterFile) throws FileNotFoundException, IOException {
         Properties p = new Properties();
-        FileInputStream propFile;        
-            propFile = new FileInputStream(parameterFile);
-            p.load(propFile);
+        FileInputStream propFile;
+        propFile = new FileInputStream(parameterFile);
+        p.load(propFile);
         return p;
     }
-   
+
     public static long getDeltaDays(String date) {
         long deltaDays = 0;
 
@@ -60,7 +135,7 @@ public class Utilities {
         String date = getFormatedDate(format, timeMS, tz);
         return date;
     }
-    
+
     // Get  date in given format and timezone
     public static String getFormatedDate(String format, long timeMS, TimeZone tmz) {
         SimpleDateFormat sdf = new SimpleDateFormat(format);
@@ -86,20 +161,20 @@ public class Utilities {
         try {
             TimeZone tz;
             SimpleDateFormat sdf1 = new SimpleDateFormat(format);
-            if("".compareTo(timeZone)==0){
-                tz=TimeZone.getDefault();
-            }else{
-                tz=TimeZone.getTimeZone(timeZone);
+            if ("".compareTo(timeZone) == 0) {
+                tz = TimeZone.getDefault();
+            } else {
+                tz = TimeZone.getTimeZone(timeZone);
             }
             sdf1.setTimeZone(tz);
             dt = sdf1.parse(date);
-            
+
         } catch (Exception e) {
             logger.log(Level.SEVERE, null, e);
         }
         return dt;
     }
-    
+
     public static Date addDays(Date date, int days) {
         Calendar cal = Calendar.getInstance();
         cal.setTime(date);
@@ -115,69 +190,68 @@ public class Utilities {
     }
 
     public static boolean isValidDate(String dateString, SimpleDateFormat inputFormat) {
-    if (dateString == null || dateString.length() != inputFormat.toPattern().length()) {
-        return false;
-    }
+        if (dateString == null || dateString.length() != inputFormat.toPattern().length()) {
+            return false;
+        }
 
-    SimpleDateFormat yyyyMMdd=new SimpleDateFormat("yyyyMMdd");
+        SimpleDateFormat yyyyMMdd = new SimpleDateFormat("yyyyMMdd");
         try {
-            Date inputdate=inputFormat.parse(dateString);
-            dateString=yyyyMMdd.format(inputdate);
+            Date inputdate = inputFormat.parse(dateString);
+            dateString = yyyyMMdd.format(inputdate);
         } catch (ParseException ex) {
             Logger.getLogger(Utilities.class.getName()).log(Level.SEVERE, null, ex);
         }
 
         int date;
-    try {
-        date = Integer.parseInt(dateString);
-    } catch (NumberFormatException e) {
-        return false;
+        try {
+            date = Integer.parseInt(dateString);
+        } catch (NumberFormatException e) {
+            return false;
+        }
+
+
+        int year = date / 10000;
+        int month = (date % 10000) / 100;
+        int day = date % 100;
+
+        // leap years calculation not valid before 1581
+        boolean yearOk = (year >= 1581) && (year <= 2500);
+        boolean monthOk = (month >= 1) && (month <= 12);
+        boolean dayOk = (day >= 1) && (day <= daysInMonth(year, month));
+
+        return (yearOk && monthOk && dayOk);
     }
 
-    
-    int year = date / 10000;
-    int month = (date % 10000) / 100;
-    int day = date % 100;
-
-    // leap years calculation not valid before 1581
-    boolean yearOk = (year >= 1581) && (year <= 2500);
-    boolean monthOk = (month >= 1) && (month <= 12);
-    boolean dayOk = (day >= 1) && (day <= daysInMonth(year, month));
-
-    return (yearOk && monthOk && dayOk);
-}
-
-private static int daysInMonth(int year, int month) {
-    int daysInMonth;
-    switch (month) {
-        case 1: // fall through
-        case 3: // fall through
-        case 5: // fall through
-        case 7: // fall through
-        case 8: // fall through
-        case 10: // fall through
-        case 12:
-            daysInMonth = 31;
-            break;
-        case 2:
-            if (((year % 4 == 0) && (year % 100 != 0)) || (year % 400 == 0)) {
-                daysInMonth = 29;
-            } else {
-                daysInMonth = 28;
-            }
-            break;
-        default:
-            // returns 30 even for nonexistant months 
-            daysInMonth = 30;
+    private static int daysInMonth(int year, int month) {
+        int daysInMonth;
+        switch (month) {
+            case 1: // fall through
+            case 3: // fall through
+            case 5: // fall through
+            case 7: // fall through
+            case 8: // fall through
+            case 10: // fall through
+            case 12:
+                daysInMonth = 31;
+                break;
+            case 2:
+                if (((year % 4 == 0) && (year % 100 != 0)) || (year % 400 == 0)) {
+                    daysInMonth = 29;
+                } else {
+                    daysInMonth = 28;
+                }
+                break;
+            default:
+                // returns 30 even for nonexistant months 
+                daysInMonth = 30;
+        }
+        return daysInMonth;
     }
-    return daysInMonth;
-}
-
 
     //Testing routine
-    public static void main(String args[]){
-        String out=Utilities.getFormatedDate("yyyy-MM-dd HH:mm:ss",new Date().getTime(),TimeZone.getTimeZone("GMT-4:00"));
+    public static void main(String args[]) {
+        String out = Utilities.getFormatedDate("yyyy-MM-dd HH:mm:ss", new Date().getTime(), TimeZone.getTimeZone("GMT-4:00"));
         System.out.println(out);
-        
+
     }
 }
