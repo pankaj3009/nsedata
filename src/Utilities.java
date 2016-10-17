@@ -1,7 +1,13 @@
 
+import com.cedarsoftware.util.io.JsonObject;
+import com.cedarsoftware.util.io.JsonReader;
+import java.io.BufferedReader;
+import com.cedarsoftware.util.io.JsonWriter;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.URISyntaxException;
 import java.text.DecimalFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
@@ -11,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Properties;
 import java.util.TimeZone;
+import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import org.apache.http.HttpResponse;
@@ -24,6 +31,7 @@ import org.kairosdb.client.builder.DataPoint;
 import org.kairosdb.client.builder.QueryBuilder;
 import org.kairosdb.client.builder.QueryMetric;
 import org.kairosdb.client.response.QueryResponse;
+import org.kairosdb.client.response.Response;
 
 /**
  * Date utility
@@ -36,15 +44,15 @@ public class Utilities {
     private static final long MILLI_SEC_PER_DAY = 1000 * 60 * 60 * 24;
     private static final Logger logger = Logger.getLogger(Utilities.class.getName());
 
-    public static HashMap<Long, String> getPrices(String exchangeSymbol, String expiry, String right, String optionStrike, Date startDate, Date endDate, String metric) {
-        HashMap<Long, String> out = new HashMap<>();
+    public static TreeMap<Long, String> getPrices(String exchangeSymbol, String expiry, String right, String optionStrike, Date startDate, Date endDate, String metric) {
+        TreeMap<Long, String> out = new TreeMap<>();
         try {
             HttpClient client = new HttpClient("http://" + "91.121.168.138" + ":8085");
             String strike = Utilities.formatDouble(Utilities.getDouble(optionStrike, 0), new DecimalFormat("#.##"));
             QueryBuilder builder = QueryBuilder.getInstance();
             String symbol = null;
-            symbol = exchangeSymbol.replaceAll("[^A-Za-z0-9\\-]", "").toLowerCase();
-
+            //symbol = exchangeSymbol.replaceAll("[^A-Za-z0-9]", "").toLowerCase();
+            symbol=exchangeSymbol;
             builder.setStart(startDate)
                     .setEnd(endDate)
                     .addMetric(metric)
@@ -70,6 +78,185 @@ public class Utilities {
         }
         return out;
     }
+
+        public static Object[] getOptionStrikesFromKDB(String symbol,String expiry,long startTime, long endTime, String metric){
+        Object[] out=new Object[1];
+        HashMap<String, Object> param = new HashMap();
+        param.put("TYPE", Boolean.FALSE);
+        HistoricalRequestJson request = new HistoricalRequestJson(metric,
+                new String[]{"symbol", "expiry"},
+                new String[]{symbol, expiry},
+                null,
+                null,
+                null,
+                String.valueOf(startTime),
+                String.valueOf(endTime));
+        //http://stackoverflow.com/questions/7181534/http-post-using-json-in-java
+        String json_string = JsonWriter.objectToJson(request, param);
+        StringEntity requestEntity = new StringEntity(
+                json_string,
+                ContentType.APPLICATION_JSON);
+
+        HttpPost postMethod = new HttpPost("http://91.121.165.108:8085/api/v1/datapoints/query/tags");
+        postMethod.setEntity(requestEntity);
+        CloseableHttpClient httpClient = HttpClients.createDefault();
+        try {
+            HttpResponse rawResponse = httpClient.execute(postMethod);
+            BufferedReader br = new BufferedReader(
+                    new InputStreamReader((rawResponse.getEntity().getContent())));
+
+            String output;
+            System.out.println("Output from Server .... \n");
+            while ((output = br.readLine()) != null) {
+                param.clear();
+                param.put("USE_MAPS", "false");
+                JsonObject obj = (JsonObject) JsonReader.jsonToJava(output, param);
+                JsonObject t = (JsonObject) ((Object[]) obj.get("queries"))[0];
+                JsonObject results = (JsonObject) ((Object[]) t.get("results"))[0];
+                JsonObject tags = (JsonObject) results.get("tags");
+                Object[] strikes=(Object[])tags.get("strike");
+                out = strikes; //0 is long time, 1 is value
+            }
+
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, null, e);
+        }
+
+       
+        return out;
+    }
+
+   public static Object[] getExpiriesFromKDB(String symbol,long startTime, long endTime, String metric){
+        Object[] out=new Object[1];
+        HashMap<String, Object> param = new HashMap();
+        param.put("TYPE", Boolean.FALSE);
+        String strike=null;
+        String expiry=null;
+        HistoricalRequestJson request = new HistoricalRequestJson(metric,
+                new String[]{"symbol"},
+                new String[]{symbol},
+                null,
+                null,
+                null,
+                String.valueOf(startTime),
+                String.valueOf(endTime));
+        //http://stackoverflow.com/questions/7181534/http-post-using-json-in-java
+        String json_string = JsonWriter.objectToJson(request, param);
+        StringEntity requestEntity = new StringEntity(
+                json_string,
+                ContentType.APPLICATION_JSON);
+
+        HttpPost postMethod = new HttpPost("http://91.121.168.138:8085/api/v1/datapoints/query/tags");
+        postMethod.setEntity(requestEntity);
+        CloseableHttpClient httpClient = HttpClients.createDefault();
+        try {
+            HttpResponse rawResponse = httpClient.execute(postMethod);
+            BufferedReader br = new BufferedReader(
+                    new InputStreamReader((rawResponse.getEntity().getContent())));
+
+            String output;
+            System.out.println("Output from Server .... \n");
+            while ((output = br.readLine()) != null) {
+                param.clear();
+                param.put("USE_MAPS", "false");
+                JsonObject obj = (JsonObject) JsonReader.jsonToJava(output, param);
+                JsonObject t = (JsonObject) ((Object[]) obj.get("queries"))[0];
+                JsonObject results = (JsonObject) ((Object[]) t.get("results"))[0];
+                JsonObject tags = (JsonObject) results.get("tags");
+                Object[] expiries=(Object[])tags.get("expiry");
+                //int length = expiries.length;
+                //Object[] outarray = (Object[]) expiries[length - 1];
+                out = expiries; //0 is long time, 1 is value
+
+            }
+
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, null, e);
+        }
+
+       
+        return out;
+    }
+    
+   public static Object[] getSymbolsFromKDB(long startTime, long endTime, String metric){
+        Object[] out=new Object[1];
+        HashMap<String, Object> param = new HashMap();
+        param.put("TYPE", Boolean.FALSE);
+        String strike=null;
+        String expiry=null;
+        HistoricalRequestJson request = new HistoricalRequestJson(metric,
+                null,
+                null,
+                null,
+                null,
+                null,
+                String.valueOf(startTime),
+                String.valueOf(endTime));
+        //http://stackoverflow.com/questions/7181534/http-post-using-json-in-java
+        String json_string = JsonWriter.objectToJson(request, param);
+        StringEntity requestEntity = new StringEntity(
+                json_string,
+                ContentType.APPLICATION_JSON);
+
+        HttpPost postMethod = new HttpPost("http://91.121.168.138:8085/api/v1/datapoints/query/tags");
+        postMethod.setEntity(requestEntity);
+        CloseableHttpClient httpClient = HttpClients.createDefault();
+        try {
+            HttpResponse rawResponse = httpClient.execute(postMethod);
+            BufferedReader br = new BufferedReader(
+                    new InputStreamReader((rawResponse.getEntity().getContent())));
+
+            String output;
+            System.out.println("Output from Server .... \n");
+            while ((output = br.readLine()) != null) {
+                param.clear();
+                param.put("USE_MAPS", "false");
+                JsonObject obj = (JsonObject) JsonReader.jsonToJava(output, param);
+                JsonObject t = (JsonObject) ((Object[]) obj.get("queries"))[0];
+                JsonObject results = (JsonObject) ((Object[]) t.get("results"))[0];
+                JsonObject tags = (JsonObject) results.get("tags");
+                Object[] symbols=(Object[])tags.get("symbol");
+                //int length = expiries.length;
+                //Object[] outarray = (Object[]) expiries[length - 1];
+                out = symbols; //0 is long time, 1 is value
+            }
+
+        } catch (Exception e) {
+            logger.log(Level.SEVERE, null, e);
+        }
+
+       
+        return out;
+    }
+   
+   public static void deleteData(String exchangeSymbol, String expiry, String right, String optionStrike, Date startDate, Date endDate, String metric)  {
+        TreeMap<Long, String> out = new TreeMap<>();
+        try {
+            HttpClient client = new HttpClient("http://" + "91.121.168.138" + ":8085");
+            String strike = Utilities.formatDouble(Utilities.getDouble(optionStrike, 0), new DecimalFormat("#.##"));
+            QueryBuilder builder = QueryBuilder.getInstance();
+            String symbol = null;
+            symbol = exchangeSymbol.replaceAll("[^A-Za-z0-9]", "").toLowerCase();
+
+            builder.setStart(startDate)
+                    .setEnd(endDate)
+                    .addMetric(metric)
+                    .addTag("symbol", symbol);
+            if (expiry != null && !expiry.equals("")) {
+                builder.getMetrics().get(0).addTag("expiry", expiry);
+            }
+            if (right != null && !right.equals("")) {
+                builder.getMetrics().get(0).addTag("option", right);
+                builder.getMetrics().get(0).addTag("strike", strike);
+            }
+            Response response = client.delete(builder);
+
+        }catch (Exception e){
+            logger.log(Level.SEVERE,null,e);
+        }
+        
+   }
+   
 
     public static String formatDouble(double d, DecimalFormat df) {
         return df.format(d);

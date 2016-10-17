@@ -202,6 +202,7 @@ public class NSEData {
             start.setTime(Utilities.parseDate("yyyyMMdd", startDate));
             Calendar end = Calendar.getInstance();
             end.setTime(Utilities.parseDate("yyyyMMdd", endDate));
+            SimpleDateFormat inputFormat = new SimpleDateFormat("yyyyMMdd");
             SimpleDateFormat ddMMMyyyyFormat = new SimpleDateFormat("ddMMMyyyy");
             SimpleDateFormat yyyyMMddFormat = new SimpleDateFormat("yyyyMMdd");
             SimpleDateFormat ddMMMyyyHFormat = new SimpleDateFormat("dd-MMM-yyyy");
@@ -215,14 +216,28 @@ public class NSEData {
                 URL nseTradesURL = new URL(nseTrades);
                 int attempt = 0;
                 while (attempt < attempts) {
-                    if (getResponseCode(nseTrades,null) != 404) {
+                    if (getResponseCode(nseTrades,"https://nseindia.com/products/content/derivatives/equities/archieve_fo.htm") != 404) {
                         System.out.println("Parsing URL :" + nseTrades);
+                        String fileName=inputFormat.format(start.getTime()).toUpperCase()+"_fno.zip";
+                        if(!new File("logs/"+fileName).exists()){
+                        saveToDisk(nseTrades,fileName,"https://nseindia.com/products/content/derivatives/equities/archieve_fo.htm");
+                        }
+                        ZipFile zipFile=new ZipFile("logs/"+fileName);
+                        ZipEntry entry = zipFile.entries().nextElement();
+                        InputStream zin = zipFile.getInputStream(entry);
+                        //zin.getNextEntry();
+                        String line;
+                        ArrayList<HistoricalData> h = new ArrayList<>();
+                        Scanner sc = new Scanner(zin);
+                        int recordsReceived=0;
+  /*                     
                         ZipInputStream zin = new ZipInputStream(nseTradesURL.openStream());
                         zin.getNextEntry();
                         String line;
                         ArrayList<HistoricalData> h = new ArrayList<>();
                         Scanner sc = new Scanner(zin);
                         int recordsReceived=0;
+    */
                         while (sc.hasNextLine()) {
                             line=sc.nextLine();
                             String symbolData[] = !line.isEmpty() ? line.split(",") : null;
@@ -438,7 +453,6 @@ public class NSEData {
                 String nseTrades = String.format("http://www.nseindia.com/content/indices/ind_close_all_%s.csv", "21022012");
                 URL nseTradesURL = new URL(nseTrades);
                 if (getResponseCode(nseTrades,null) != 404) {
-                    System.out.println("Parsing URL :" + nseTrades);
                     logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
                     BufferedReader in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
                     HashMap<String, HistoricalData> h = new HashMap<>();
@@ -583,7 +597,8 @@ public class NSEData {
                 while (attempt < attempts) {
                     if (getResponseCode(nseTrades,null) != 404) {
                      logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
-                     String downloadedFile=download(nseTrades, null);
+                     String fileName=inputFormat.format(date)+"_index.csv";
+                     String downloadedFile=download(nseTrades, "logs",fileName);
                      dateString = inputFormat.format(date).toUpperCase();//conver to ddMMMyyyy format for writing
                         BufferedReader in= new BufferedReader(new FileReader(downloadedFile));
                         /*
@@ -652,13 +667,12 @@ public class NSEData {
 //        httpConn.setRequestProperty("REFERRER", referer);
         int responseCode = httpConn.getResponseCode();
          if (responseCode !=403) {
-            //nputStreamReader in = new InputStreamReader(url.openStream(),"UTF_8");
-             InputStream inputStream = httpConn.getInputStream();
-             Path path=Paths.get("logs",fileName);
-//           FileOutputStream outputStream = new FileOutputStream(fileName);
-             
-            Files.copy(inputStream, path,StandardCopyOption.REPLACE_EXISTING);
-            inputStream.close();
+            try (InputStream inputStream = httpConn.getInputStream()) {
+                Path path=Paths.get("logs",fileName);
+   //           FileOutputStream outputStream = new FileOutputStream(fileName);
+                
+               Files.copy(inputStream, path,StandardCopyOption.REPLACE_EXISTING);
+            }
              httpConn.disconnect();
          }   
 /*             
@@ -677,9 +691,9 @@ public class NSEData {
     }
 
     
-      static String download(String fileURL, String destinationDirectory) throws IOException {
+      static String download(String fileURL, String destinationDirectory,String downloadedFileName) throws IOException {
         // File name that is being downloaded
-        String downloadedFileName = fileURL.substring(fileURL.lastIndexOf("/")+1);
+        //String downloadedFileName = fileURL.substring(fileURL.lastIndexOf("/")+1);
          
         // Open connection to the file
         URL url = new URL(fileURL);
@@ -727,6 +741,9 @@ public class NSEData {
 
         try {
             symbol = symbol.replaceAll(" ", "");
+            if (symbol.equals("NIFTY") || symbol.equalsIgnoreCase("CNXNifty") || symbol.equalsIgnoreCase("Nifty50")) {
+                symbol = "NSENIFTY";
+            }
             if (!isNumeric(value)) {
                 value = "0";
             }
