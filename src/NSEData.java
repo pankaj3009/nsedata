@@ -572,6 +572,9 @@ public class NSEData {
                                     Cassandra(hist.volume, time, cassandraIndexMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                                     Cassandra(hist.close, time, cassandraIndexMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                                     Cassandra(hist.tradedValue, time, cassandraIndexMetric + ".tradedvalue", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.PE, time, cassandraIndexMetric + ".pe", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.PB, time, cassandraIndexMetric + ".pb", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    Cassandra(hist.dividendyield, time, cassandraIndexMetric + ".dividendyield", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                                 }
                             }
                         }
@@ -600,7 +603,7 @@ public class NSEData {
                      String fileName=inputFormat.format(date)+"_index.csv";
                      String downloadedFile=download(nseTrades, "logs",fileName);
                      dateString = inputFormat.format(date).toUpperCase();//conver to ddMMMyyyy format for writing
-                        BufferedReader in= new BufferedReader(new FileReader(downloadedFile));
+                        BufferedReader in= new BufferedReader(new FileReader("logs/"+downloadedFile));
                         /*
                         InputStreamReader is=new InputStreamReader(nseTradesURL.openStream());
                         BufferedReader in = new BufferedReader(is);
@@ -635,6 +638,9 @@ public class NSEData {
                                 Cassandra(hist.volume, time, cassandraIndexMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                                 Cassandra(hist.close, time, cassandraIndexMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                                 Cassandra(hist.tradedValue, time, cassandraIndexMetric + ".tradedvalue", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.PE, time, cassandraIndexMetric + ".pe", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.PB, time, cassandraIndexMetric + ".pb", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                Cassandra(hist.dividendyield, time, cassandraIndexMetric + ".dividendyield", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                             }
                         }
                         break;
