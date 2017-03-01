@@ -43,6 +43,11 @@ import java.util.logging.Logger;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipInputStream;
+import redis.clients.jedis.Jedis;
+import redis.clients.jedis.JedisPool;
+import redis.clients.jedis.JedisPoolConfig;
+import org.rosuda.REngine.REXP;
+import org.rosuda.REngine.Rserve.RConnection;
 
 /**
  *
@@ -55,12 +60,13 @@ public class NSEData {
      */
     private static final Logger logger = Logger.getLogger(NSEData.class.getName());
     private static Connection conn;
-    private static int pausebetweenattempts=0;
+    private static int pausebetweenattempts = 0;
     /*redis parameters*/
     private static String redisIP;
-    private static String redisPort;
-    private static String redisDB;
-    
+    private static int redisPort;
+    private static int redisDB;
+    private static JedisPool pool;
+    private static String rServerIP;    
     private static String cassandraIP;
     private static String cassandraPort;
     private static String cassandraEquityMetric;
@@ -74,10 +80,12 @@ public class NSEData {
     private static boolean useCassandra = false;
     private static boolean useRedis = false;
     private static boolean useFile = false;
+    private static boolean useR=false;
+    private static RConnection c = null;
     private static int attempts = 1;
-    private static String shaInsert="";
+    private static String shaInsert = "";
+    private static boolean sendmail = Boolean.FALSE;
 
-                   
     public static void main(String[] args) throws MalformedURLException, ClassNotFoundException, SQLException, IOException, ParseException {
         try {
             SimpleDateFormat inputDateFormat = new SimpleDateFormat("yyyyMMdd");
@@ -85,8 +93,9 @@ public class NSEData {
             LogManager.getLogManager().readConfiguration(configFile);
             Class.forName("com.mysql.jdbc.Driver");
             Properties p = Utilities.loadParameters(args[1]);
-            pausebetweenattempts=Integer.valueOf(p.getProperty("pausebetweenattempts", "5"));
+            pausebetweenattempts = Integer.valueOf(p.getProperty("pausebetweenattempts", "5"));
             cassandraIP = p.getProperty("cassandraconnection");
+            sendmail = Boolean.valueOf(p.getProperty("sendmail", "false"));
             cassandraPort = p.getProperty("cassandraport");
             cassandraEquityMetric = p.getProperty("equity");
             cassandraFutureMetric = p.getProperty("future");
@@ -97,6 +106,18 @@ public class NSEData {
                 cassandraConnection = new Socket(cassandraIP, Integer.parseInt(cassandraPort));
                 output = new PrintStream(cassandraConnection.getOutputStream());
             }
+            redisIP = p.getProperty("redisip");
+            if (redisIP != null) {
+            redisPort = Integer.valueOf(p.getProperty("redisport"));
+            redisDB = Integer.valueOf(p.getProperty("redisdb"));
+            useRedis = true;
+                pool = new JedisPool(new JedisPoolConfig(), redisIP, redisPort, 2000, null, redisDB);
+            }
+            rServerIP=p.getProperty("rserverip");
+            if(rServerIP!=null){
+                useR=true;
+                 c = new RConnection("localhost",6311);
+            }
             String sqlIP = p.getProperty("sqlconnection");
             String sqlDatabase = p.getProperty("sqldatabase");
             sqlTable = p.getProperty("sqltable");
@@ -106,11 +127,7 @@ public class NSEData {
                 useSQL = true;
                 conn = DriverManager.getConnection("jdbc:mysql://" + sqlIP + "/" + sqlDatabase + "?rewriteBatchedStatements=true", sqlUserName, sqlPassword);
             }
-            redisIP = p.getProperty("redisconnection");
-            redisPort = p.getProperty("redisport");
-            redisDB = p.getProperty("redisdatabase");
-            
-           
+
             useFile = p.getProperty("fileoutput") != null ? Boolean.parseBoolean(p.getProperty("fileoutput")) : false;
             attempts = p.getProperty("attemptsonurl") != null ? Integer.parseInt(p.getProperty("attemptsonurl")) : 1;
             usage();
@@ -164,30 +181,6 @@ public class NSEData {
         }
     }
 
-    /*
-    public static Object insert(String key, String value,long time){
-        List<String> keyArray=new ArrayList<>();
-        keyArray.add(key);
-        List valueArray=new ArrayList<>();
-        valueArray.add(String.valueOf(time));
-        valueArray.add(value);
-         try (Jedis jedis = jPool.getResource()) {
-             if(jedis.scriptExists(shaInsert)){
-             return jedis.evalsha(shaInsert, keyArray, valueArray);                 
-             }else{
-                 shaInsert=jedis.scriptLoad("local value = cmsgpack.pack({ARGV[2], ARGV[1]}) redis.call('zadd', KEYS[1], ARGV[1], value) return redis.status_reply('ok')");
-                 return jedis.evalsha(shaInsert, keyArray, valueArray);                 
-             }
-        }
-    }
-    */
-    /*
-    public static Object insert(String key, String value,long time){
-         try (Jedis jedis = jPool.getResource()) {
-          return jedis.hset(key, String.valueOf(time), value);
-         } 
-    }
-*/
     static void usage() {
         System.out.println("usage: java -jar NSETools ief startdate enddate");
         System.out.println("e->imports equity, i->imports indices, f->imports futures and options");
@@ -216,30 +209,32 @@ public class NSEData {
                 URL nseTradesURL = new URL(nseTrades);
                 int attempt = 0;
                 while (attempt < attempts) {
-                    if (getResponseCode(nseTrades,"https://nseindia.com/products/content/derivatives/equities/archieve_fo.htm") != 404) {
+                    Object[] res = getResponseCode(nseTrades, "https://nseindia.com/products/content/derivatives/equities/archieve_fo.htm");
+                    if (Integer.valueOf(res[0].toString()) != 404) {
+                        nseTrades = res[1].toString();
                         System.out.println("Parsing URL :" + nseTrades);
-                        String fileName=inputFormat.format(start.getTime()).toUpperCase()+"_fno.zip";
-                        if(!new File("logs/"+fileName).exists()){
-                        saveToDisk(nseTrades,fileName,"https://nseindia.com/products/content/derivatives/equities/archieve_fo.htm");
+                        String fileName = inputFormat.format(start.getTime()).toUpperCase() + "_fno.zip";
+                        if (!new File("logs/" + fileName).exists()) {
+                            saveToDisk(nseTrades, fileName, "https://nseindia.com/products/content/derivatives/equities/archieve_fo.htm");
                         }
-                        ZipFile zipFile=new ZipFile("logs/"+fileName);
+                        ZipFile zipFile = new ZipFile("logs/" + fileName);
                         ZipEntry entry = zipFile.entries().nextElement();
                         InputStream zin = zipFile.getInputStream(entry);
                         //zin.getNextEntry();
                         String line;
                         ArrayList<HistoricalData> h = new ArrayList<>();
                         Scanner sc = new Scanner(zin);
-                        int recordsReceived=0;
-  /*                     
-                        ZipInputStream zin = new ZipInputStream(nseTradesURL.openStream());
-                        zin.getNextEntry();
-                        String line;
-                        ArrayList<HistoricalData> h = new ArrayList<>();
-                        Scanner sc = new Scanner(zin);
-                        int recordsReceived=0;
-    */
+                        int recordsReceived = 0;
+                        /*                     
+                         ZipInputStream zin = new ZipInputStream(nseTradesURL.openStream());
+                         zin.getNextEntry();
+                         String line;
+                         ArrayList<HistoricalData> h = new ArrayList<>();
+                         Scanner sc = new Scanner(zin);
+                         int recordsReceived=0;
+                         */
                         while (sc.hasNextLine()) {
-                            line=sc.nextLine();
+                            line = sc.nextLine();
                             String symbolData[] = !line.isEmpty() ? line.split(",") : null;
                             if (symbolData != null && symbolData.length >= 15 && !symbolData[1].equals("SYMBOL")) {
                                 String symbol = symbolData[1];
@@ -257,7 +252,7 @@ public class NSEData {
                                 recordsReceived++;
                             }
                         }
-                        logger.log(Level.INFO,"Parsing URL: {0}, Records Received:{1}",new Object[]{nseTrades,recordsReceived});
+                        logger.log(Level.INFO, "Parsing URL: {0}, Records Received:{1}", new Object[]{nseTrades, recordsReceived});
                         //data starts from 20000707
                         if (useCassandra) {
                             for (HistoricalData hist : h) {
@@ -297,6 +292,78 @@ public class NSEData {
                                 }
                             }
                         }
+                        if (useRedis) {
+                            try (Jedis jedis = pool.getResource()) {
+                                for (HistoricalData hist : h) {
+                                    SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
+                                    long time = (hist.dateFormat).getTime();
+                                    if (hist.symbol.equals("NIFTY") || hist.symbol.equalsIgnoreCase("CNXNifty") || hist.symbol.equalsIgnoreCase("Nifty50")) {
+                                        hist.symbol = "NSENIFTY";
+                                    }
+                                    hist.symbol = hist.symbol.replaceAll(" ", "");
+                                    if (hist.optionStrike == null) {
+                                        hist.symbol = hist.symbol + "_FUT_" + hist.expiry + "__";
+                                    } else {
+                                        hist.symbol = hist.symbol + "_OPT_" + hist.expiry + "_" + hist.optionType + "_" + hist.optionStrike;
+                                    }
+                                    jedis.zadd(hist.symbol + ":daily:settle", time, new Pair(time, hist.last).getJson());
+                                }
+                            }
+                        }
+                        if(useR){
+                                String homefolder="/home/psharma/Seafile/rfiles/dailyfno/";
+                                String parseString=null;
+                                parseString="setwd(\"" + homefolder + "\")";
+                                c.eval(parseString);
+                                for (HistoricalData hist : h) {
+                                    SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                                    SimpleDateFormat folderdate=new SimpleDateFormat("yyyyMMdd");
+                                    String subfolder=hist.expiry.trim()+"/";
+                                    long time = (hist.dateFormat).getTime();
+                                    if (hist.symbol.equals("NIFTY") || hist.symbol.equalsIgnoreCase("CNXNifty") || hist.symbol.equalsIgnoreCase("Nifty50")) {
+                                        hist.symbol = "NSENIFTY";
+                                    }
+                                    hist.symbol = hist.symbol.replaceAll(" ", "");
+                                    if (hist.optionStrike == null) {
+                                        hist.symbol = hist.symbol + "_FUT_" + hist.expiry + "__";
+                                    } else {
+                                        hist.symbol = hist.symbol + "_OPT_" + hist.expiry + "_" + hist.optionType + "_" + hist.optionStrike;
+                                    }
+                                    //load file from R 
+                                    //write to R
+                                    REXP v=c.eval("file.exists(paste(\""+ hist.symbol+"\", \".Rdata\", sep = "+"\"\"))");
+                                    if(v.asInteger()>0){
+                                        //load file from R
+                                        parseString="load(\""+hist.symbol+".Rdata\")";
+                                        c.eval(parseString);
+                                    }else{
+                                        parseString="md=data.frame(date=as.POSIXct(as.character(),\"\"),"
+                                                + "open=as.numeric(),"
+                                                + "high=as.numeric(),"
+                                                + "low=as.numeric(),"
+                                                + "close=as.numeric(),"
+                                                + "settle=as.numeric(),"
+                                                + "volume=as.numeric(),"
+                                                + "oi=as.numeric(),"
+                                                + "symbol=as.character(),"
+                                                + "stringsAsFactors=FALSE)";
+                                        c.voidEval(parseString);
+                                    }
+                                    String formattedDate=formatter.format(hist.dateFormat);
+                                    parseString="datarow=data.frame(date=as.POSIXct(\""+formattedDate+"\",\"\"),open="+hist.open+","+ "high="+hist.high+
+                                            ",low="+hist.low+",close="+hist.close+",settle="+hist.last+",volume="+hist.volume+
+                                            ",oi="+hist.openInterest+",symbol=\""+hist.symbol+ "\")";
+                                    c.voidEval(parseString);
+                                        c.voidEval("md=rbind(md,datarow)");
+                                    parseString="md=unique(md)";
+                                    c.voidEval(parseString);
+                                    parseString="md=md[order(md$date),]";
+                                    c.voidEval(parseString);
+                                    new File(homefolder+subfolder).mkdir();
+                                    parseString="save(md,file = paste(\""+homefolder+"\",\""+subfolder+"\",\""+hist.symbol+"\",\".Rdata\", sep = \"\"))";
+                                    c.voidEval(parseString);
+                                }                              
+                        }
                         break;
                     } else {
                         Thread.sleep(60 * pausebetweenattempts * 1000);
@@ -304,7 +371,7 @@ public class NSEData {
                         logger.log(Level.INFO, "Attempt: {0}", new Object[]{attempt});
                     }
                 }
-                if (attempt == attempts) {
+                if (attempt == attempts && sendmail) {
                     Thread t = new Thread(new Mail("psharma@incurrency.com", "Could not retrieve fno data from nse", "NSE Data Alert"));
                     t.start();
                 }
@@ -331,25 +398,27 @@ public class NSEData {
                 String day = dateString.substring(0, 2);
                 String nseTrades = String.format("https://www.nseindia.com/content/historical/EQUITIES/%s/%s/cm%sbhav.csv.zip", year, month, dateString);
                 URL nseTradesURL = new URL(nseTrades);
-                
+
                 int attempt = 0;
                 while (attempt < attempts) {
-                    if (getResponseCode(nseTrades,"https://nseindia.com/products/content/equities/equities/archieve_eq.htm") != 404) {
+                    Object res[] = getResponseCode(nseTrades, "https://nseindia.com/products/content/equities/equities/archieve_eq.htm");
+                    if (Integer.valueOf(res[0].toString()) != 404) {
+                        nseTrades = res[1].toString();
                         System.out.println("Parsing URL :" + nseTrades);
                         //String fileName="equity_"+dateString+".zip";
-                        String fileName=inputFormat.format(date).toUpperCase()+"_equity.zip";
-                        if(!new File("logs/"+fileName).exists()){
-                        saveToDisk(nseTrades,fileName,"https://nseindia.com/products/content/equities/equities/archieve_eq.htm");
+                        String fileName = inputFormat.format(date).toUpperCase() + "_equity.zip";
+                        if (!new File("logs/" + fileName).exists()) {
+                            saveToDisk(nseTrades, fileName, "https://nseindia.com/products/content/equities/equities/archieve_eq.htm");
                         }
-                        ZipFile zipFile=new ZipFile("logs/"+fileName);
-                        
+                        ZipFile zipFile = new ZipFile("logs/" + fileName);
+
                         ZipEntry entry = zipFile.entries().nextElement();
                         InputStream zin = zipFile.getInputStream(entry);
                         //zin.getNextEntry();
                         String line;
                         HashMap<String, HistoricalData> h = new HashMap<>();
                         Scanner sc = new Scanner(zin);
-                        int recordsReceived=0;
+                        int recordsReceived = 0;
                         while (sc.hasNextLine()) {
                             line = sc.nextLine();
                             String symbolData[] = !line.isEmpty() ? line.split(",") : null;
@@ -365,20 +434,22 @@ public class NSEData {
                                 logger.log(Level.SEVERE, null, e);
                             }
                         }
-                        logger.log(Level.INFO,"Parsing URL: {0}. Records Received:{1}",new Object[]{nseTrades,recordsReceived});
+                        logger.log(Level.INFO, "Parsing URL: {0}. Records Received:{1}", new Object[]{nseTrades, recordsReceived});
                         //get delivery quantity
                         requiredFormat = new SimpleDateFormat("ddMMyyyy");
                         dateString = requiredFormat.format(date);
                         nseTrades = String.format("https://www.nseindia.com/archives/equities/mto/MTO_%s.DAT", dateString);
                         nseTradesURL = new URL(nseTrades);
-                        if (getResponseCode(nseTrades,"https://nseindia.com/products/content/equities/equities/archieve_eq.htm") != 404) {
+                        res = getResponseCode(nseTrades, "https://nseindia.com/products/content/equities/equities/archieve_eq.htm");
+                        if (Integer.valueOf(res[0].toString()) != 404) {
+                            nseTrades = res[1].toString();
                             System.out.println("Parsing URL :" + nseTrades);
-                         fileName=inputFormat.format(date).toUpperCase()+"_delivered.dat";
-                         if(!new File("logs/"+fileName).exists()){
-                         saveToDisk(nseTrades,fileName,"https://nseindia.com/products/content/equities/equities/archieve_eq.htm");
-                         } 
-                         BufferedReader in = new BufferedReader(new FileReader(new File("logs/"+fileName)));
-                        //zin.getNextEntry();
+                            fileName = inputFormat.format(date).toUpperCase() + "_delivered.dat";
+                            if (!new File("logs/" + fileName).exists()) {
+                                saveToDisk(nseTrades, fileName, "https://nseindia.com/products/content/equities/equities/archieve_eq.htm");
+                            }
+                            BufferedReader in = new BufferedReader(new FileReader(new File("logs/" + fileName)));
+                            //zin.getNextEntry();
                             //BufferedReader in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
                             int j = 0;
                             int rowsToSkip = 4;
@@ -416,9 +487,19 @@ public class NSEData {
                                 Cassandra(hist.volume, time, cassandraEquityMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                                 Cassandra(hist.close, time, cassandraEquityMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                                 Cassandra(hist.deliverable, time, cassandraEquityMetric + ".delivered", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                }
+                        }
+                        if (useRedis) {
+                            try (Jedis jedis = pool.getResource()) {
+                                for (HistoricalData hist : h.values()) {
+                                    hist.symbol = hist.symbol.replaceAll(" ", "");
+                                    hist.symbol = hist.symbol + "_STK___";
+                                    SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
+                                    long time = formatter.parse(hist.date).getTime();
+                                    jedis.zadd(hist.symbol + ":daily:settle", time, new Pair(time, hist.close).getJson());
+                                }
                             }
                         }
-
                         break;
                     } else {
                         Thread.sleep(60 * pausebetweenattempts * 1000);
@@ -426,8 +507,8 @@ public class NSEData {
                         logger.log(Level.INFO, "Attempt: {0}", new Object[]{attempt});
                     }
                 }
- //               if (attempt == attempts) {
-                if(false){
+                //               if (attempt == attempts) {
+                if (attempt == attempts & sendmail) {
                     Thread t = new Thread(new Mail("psharma@incurrency.com", "Could not retrieve cash equity data from nse", "NSE Data Alert"));
                     t.start();
                 }
@@ -450,10 +531,13 @@ public class NSEData {
                 //prior processing
                 //get data for 21 FEB 2012 - indices only
                 ArrayList<String> legacyIndices = new ArrayList<>();
-                String nseTrades = String.format("http://www.nseindia.com/content/indices/ind_close_all_%s.csv", "21022012");
+                String nseTrades = String.format("https://www.nseindia.com/content/indices/ind_close_all_%s.csv", "21022012");
                 URL nseTradesURL = new URL(nseTrades);
-                if (getResponseCode(nseTrades,null) != 404) {
-                    logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
+                Object[] res = getResponseCode(nseTrades, "https://www.nseindia.com/products/content/equities/indices/archieve_indices.htm");
+                if (Integer.valueOf(res[0].toString()) != 404) {
+                    nseTrades = res[1].toString();
+                    logger.log(Level.INFO, "Parsing URL: {0}", new Object[]{nseTrades});
+                    nseTradesURL = new URL(nseTrades);
                     BufferedReader in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
                     HashMap<String, HistoricalData> h = new HashMap<>();
                     HashMap<String, HistoricalData> hdate = new HashMap<>();
@@ -493,10 +577,13 @@ public class NSEData {
                             index = index.replaceAll(" ", "%20");
                             nseTrades = String.format("http://www.nseindia.com/content/indices/histdata/%s%s-%s.csv", index, ddmmyyyyFormat.format(sd), ddmmyyyyFormat.format(ed));
                             nseTradesURL = new URL(nseTrades);
-                            if (getResponseCode(nseTrades,null) != 404) {
+                            res = getResponseCode(nseTrades, "https://www.nseindia.com/products/content/equities/indices/historical_index_data.htm");
+                            if (Integer.valueOf(res[0].toString()) != 404) {
+                                nseTrades = res[1].toString();
                                 System.out.println("Parsing URL :" + nseTrades);
-                                logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
+                                logger.log(Level.INFO, "Parsing URL: {0}", new Object[]{nseTrades});
                                 try {
+                                    nseTradesURL = new URL(nseTrades);
                                     in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
                                 } catch (Exception e) {
                                     logger.log(Level.SEVERE, null, e);
@@ -525,11 +612,17 @@ public class NSEData {
                                 //update PE
                                 if (sd.after(yyyyMMddFormat.parse("19981231"))) {
                                     index = index.replaceAll(" ", "%20");
+                                    index = index.replaceAll("CNX%20NIFTY", "NIFTY50");
                                     nseTrades = String.format("http://www.nseindia.com/content/indices/histdata/%sall%s-TO-%s.csv", index, ddmmyyyyFormat.format(sd), ddmmyyyyFormat.format(ed));
                                     nseTradesURL = new URL(nseTrades);
-                                    if (getResponseCode(nseTrades,null) != 404) {
+                                    //            res=getResponseCode(nseTrades,"https://nseindia.com/products/content/equities/indices/historical_pepb.htm");
+                                    res = getResponseCode(nseTrades, null);
+                                    if (Integer.valueOf(res[0].toString()) != 404) {
+                                        nseTrades = res[1].toString();
                                         System.out.println("Parsing URL :" + nseTrades);
-                                        logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});                      
+                                        logger.log(Level.INFO, "Parsing URL: {0}", new Object[]{nseTrades});
+                                        nseTradesURL = new URL(nseTrades);
+
                                         in = new BufferedReader(new InputStreamReader(nseTradesURL.openStream()));
                                         j = 0;
                                         rowsToSkip = 1;
@@ -565,16 +658,19 @@ public class NSEData {
                                 for (HistoricalData hist : h.values()) {
                                     SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
                                     long time = formatter.parse(hist.date).getTime();
-                                    Cassandra(hist.open, time, cassandraIndexMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                    Cassandra(hist.high, time, cassandraIndexMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                    Cassandra(hist.low, time, cassandraIndexMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                    Cassandra(hist.last, time, cassandraIndexMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                    Cassandra(hist.volume, time, cassandraIndexMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                    Cassandra(hist.close, time, cassandraIndexMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                    Cassandra(hist.tradedValue, time, cassandraIndexMetric + ".tradedvalue", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                    Cassandra(hist.PE, time, cassandraIndexMetric + ".pe", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                    Cassandra(hist.PB, time, cassandraIndexMetric + ".pb", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
-                                    Cassandra(hist.dividendyield, time, cassandraIndexMetric + ".dividendyield", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                    /*
+                                     Cassandra(hist.open, time, cassandraIndexMetric + ".open", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                     Cassandra(hist.high, time, cassandraIndexMetric + ".high", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                     Cassandra(hist.low, time, cassandraIndexMetric + ".low", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                     Cassandra(hist.last, time, cassandraIndexMetric + ".close", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                     Cassandra(hist.volume, time, cassandraIndexMetric + ".volume", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                     Cassandra(hist.close, time, cassandraIndexMetric + ".settle", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                     Cassandra(hist.tradedValue, time, cassandraIndexMetric + ".tradedvalue", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                     Cassandra(hist.PE, time, cassandraIndexMetric + ".pe", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                     Cassandra(hist.PB, time, cassandraIndexMetric + ".pb", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+                                     Cassandra(hist.dividendyield, time, cassandraIndexMetric + ".dividendyield", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
+  
+                                     */
                                 }
                             }
                         }
@@ -595,19 +691,21 @@ public class NSEData {
                 String nseTrades = String.format("https://www1.nseindia.com/content/indices/ind_close_all_%s.csv", dateString);
                 URL nseTradesURL = new URL(nseTrades);
                 int attempt = 0;
-                System.setProperty("java.protocol.handler.pkgs","com.sun.net.ssl.internal.www.protocol");
+                System.setProperty("java.protocol.handler.pkgs", "com.sun.net.ssl.internal.www.protocol");
                 Security.addProvider(new com.sun.net.ssl.internal.ssl.Provider());
                 while (attempt < attempts) {
-                    if (getResponseCode(nseTrades,null) != 404) {
-                     logger.log(Level.INFO,"Parsing URL: {0}",new Object[]{nseTrades});
-                     String fileName=inputFormat.format(date)+"_index.csv";
-                     String downloadedFile=download(nseTrades, "logs",fileName);
-                     dateString = inputFormat.format(date).toUpperCase();//conver to ddMMMyyyy format for writing
-                        BufferedReader in= new BufferedReader(new FileReader("logs/"+downloadedFile));
+                    Object[] res = getResponseCode(nseTrades, null);
+                    if (Integer.valueOf(res[0].toString()) != 404) {
+                        nseTrades = res[1].toString();
+                        logger.log(Level.INFO, "Parsing URL: {0}", new Object[]{nseTrades});
+                        String fileName = inputFormat.format(date) + "_index.csv";
+                        String downloadedFile = download(nseTrades, "logs", fileName);
+                        dateString = inputFormat.format(date).toUpperCase();//conver to ddMMMyyyy format for writing
+                        BufferedReader in = new BufferedReader(new FileReader("logs/" + downloadedFile));
                         /*
-                        InputStreamReader is=new InputStreamReader(nseTradesURL.openStream());
-                        BufferedReader in = new BufferedReader(is);
-                        */
+                         InputStreamReader is=new InputStreamReader(nseTradesURL.openStream());
+                         BufferedReader in = new BufferedReader(is);
+                         */
                         String line;
                         HashMap<String, HistoricalData> h = new HashMap<>();
                         int j = 0;
@@ -643,13 +741,30 @@ public class NSEData {
                                 Cassandra(hist.dividendyield, time, cassandraIndexMetric + ".dividendyield", hist.symbol, hist.expiry, hist.optionStrike, hist.optionType, output);
                             }
                         }
+                        if (useRedis) {
+                            try (Jedis jedis = pool.getResource()) {
+                                for (HistoricalData hist : h.values()) {
+                                    SimpleDateFormat formatter = new SimpleDateFormat("yyyyMMdd");
+                                    long time = formatter.parse(hist.date).getTime();
+                                    hist.symbol=hist.symbol.replaceAll(" ", "");
+                                    hist.symbol = hist.symbol.toUpperCase();
+                                    if (hist.symbol.equals("NIFTY") || hist.symbol.equalsIgnoreCase("CNXNifty") || hist.symbol.equalsIgnoreCase("Nifty50")) {
+                                        hist.symbol = "NSENIFTY";
+                                    }
+
+                                   // hist.symbol = hist.symbol.replaceAll(" ", "");
+                                    hist.symbol = hist.symbol + "_IND___";
+                                    jedis.zadd(hist.symbol + ":daily:settle", time, new Pair(time, hist.close).getJson());
+                                }
+                            }
+                        }
                         break;
                     } else {
                         Thread.sleep(60 * pausebetweenattempts * 1000);
                         attempt++;
                     }
                 }
-                if (attempt == attempts) {
+                if (attempt == attempts && sendmail) {
                     //email error;
                 }
             }
@@ -657,93 +772,93 @@ public class NSEData {
             logger.log(Level.SEVERE, null, e);
         }
     }
-    
-    static void saveToDisk(String fileURL,String fileName,String referer) throws MalformedURLException, IOException{
+
+    static void saveToDisk(String fileURL, String fileName, String referer) throws MalformedURLException, IOException {
         URL url = new URL(fileURL);
         HttpURLConnection httpConn = (HttpURLConnection) url.openConnection();
 //       httpConn.setRequestProperty("REFERRER", "http://www1.nseindia.com/products/content/equities/indices/homepage_indices.htm");
-        if(referer!=null){
-        httpConn.setRequestProperty("referer", referer);            
-        httpConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36");
-        httpConn.setRequestProperty("Upgrade-Insecure-Requests", "1");
-        httpConn.setRequestProperty("Accept-Encoding","gzip, deflate, sdch, br" );
-            
+        if (referer != null) {
+            httpConn.setRequestProperty("referer", referer);
+            httpConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36");
+            httpConn.setRequestProperty("Upgrade-Insecure-Requests", "1");
+            httpConn.setRequestProperty("Accept-Encoding", "gzip, deflate, sdch, br");
+
         }
-    
+
 //        httpConn.setRequestProperty("REFERRER", referer);
         int responseCode = httpConn.getResponseCode();
-         if (responseCode !=403) {
+        if (responseCode != 403) {
             try (InputStream inputStream = httpConn.getInputStream()) {
-                Path path=Paths.get("logs",fileName);
-   //           FileOutputStream outputStream = new FileOutputStream(fileName);
-                
-               Files.copy(inputStream, path,StandardCopyOption.REPLACE_EXISTING);
+                Path path = Paths.get("logs", fileName);
+                //           FileOutputStream outputStream = new FileOutputStream(fileName);
+
+                Files.copy(inputStream, path, StandardCopyOption.REPLACE_EXISTING);
             }
-             httpConn.disconnect();
-         }   
-/*             
-             copyInputStreamToFile(inputStream,fileName);
-             FileOutputStream outputStream = new FileOutputStream(fileName);
-                         int bytesRead = -1;
-            byte[] buffer = new byte[1];
-            while ((bytesRead = inputStream.read(buffer)) != -1) {
-                outputStream.write(buffer, 0, bytesRead);
-            }
-              outputStream.close();
-            inputStream.close();
-             httpConn.disconnect();
+            httpConn.disconnect();
+        }
+        /*             
+         copyInputStreamToFile(inputStream,fileName);
+         FileOutputStream outputStream = new FileOutputStream(fileName);
+         int bytesRead = -1;
+         byte[] buffer = new byte[1];
+         while ((bytesRead = inputStream.read(buffer)) != -1) {
+         outputStream.write(buffer, 0, bytesRead);
+         }
+         outputStream.close();
+         inputStream.close();
+         httpConn.disconnect();
          }    
-     */
+         */
     }
 
-    
-      static String download(String fileURL, String destinationDirectory,String downloadedFileName) throws IOException {
+    static String download(String fileURL, String destinationDirectory, String downloadedFileName) throws IOException {
         // File name that is being downloaded
         //String downloadedFileName = fileURL.substring(fileURL.lastIndexOf("/")+1);
-         
+
         // Open connection to the file
         URL url = new URL(fileURL);
         InputStream is = url.openStream();
         // Stream to the destionation file
         FileOutputStream fos;
-        if(destinationDirectory==null){// save to working folder
-        fos = new FileOutputStream(downloadedFileName);            
-        }else{
-        fos = new FileOutputStream(destinationDirectory + "/" + downloadedFileName);
+        if (destinationDirectory == null) {// save to working folder
+            fos = new FileOutputStream(downloadedFileName);
+        } else {
+            fos = new FileOutputStream(destinationDirectory + "/" + downloadedFileName);
         }
         // Read bytes from URL to the local file
         byte[] buffer = new byte[4096];
         int bytesRead = 0;
-         
+
         System.out.print("Downloading " + downloadedFileName);
         while ((bytesRead = is.read(buffer)) != -1) {
             System.out.print(".");  // Progress bar :)
-            fos.write(buffer,0,bytesRead);
+            fos.write(buffer, 0, bytesRead);
         }
         System.out.println("done!");
-  
+
         // Close destination stream
         fos.close();
         // Close URL stream
         is.close();
         return downloadedFileName;
-    } 
-
-    private static void copyInputStreamToFile( InputStream in, String file ) {
-    try {
-        OutputStream out = new FileOutputStream(new File(file));
-        byte[] buf = new byte[1024];
-        int len;
-        while((len=in.read(buf))>0){
-            out.write(buf,0,len);
-        }
-        out.close();
-        in.close();
-    } catch (Exception e) {
-        e.printStackTrace();
     }
-}
-        static void Cassandra(String value, long time, String metric, String symbol, String expiry, String strike, String optionType, PrintStream output) {
+
+    private static void copyInputStreamToFile(InputStream in, String file) {
+        try {
+            OutputStream out = new FileOutputStream(new File(file));
+            byte[] buf = new byte[1024];
+            int len;
+            while ((len = in.read(buf)) > 0) {
+                out.write(buf, 0, len);
+            }
+            out.close();
+            in.close();
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    static void Cassandra(String value, long time, String metric, String symbol, String expiry, String strike, String optionType, PrintStream output) {
 
         try {
             symbol = symbol.replaceAll(" ", "");
@@ -769,34 +884,33 @@ public class NSEData {
         }
     }
 
-    
-  /*  
-    static void Cassandra(String value, long time, String metric, String symbol, String expiry, String strike, String optionType, PrintStream output) {
+    /*  
+     static void Cassandra(String value, long time, String metric, String symbol, String expiry, String strike, String optionType, PrintStream output) {
 
-        try {
-            symbol = symbol.replaceAll(" ", "").replaceAll("&", "");
-            if (symbol.equals("NIFTY") || symbol.equalsIgnoreCase("CNXNifty") || symbol.equalsIgnoreCase("Nifty50")) {
-                symbol = "NSENIFTY";
-            }
-            if (!isNumeric(value)) {
-                value = "0";
-            }
-            if (expiry == null) {
-                output.print("put " + metric + " " + time + " " + value + " " + "symbol=" + symbol.replaceAll("[^A-Za-z0-9]", "").toLowerCase() + System.getProperty("line.separator"));
-            } else if (strike == null) {
-                output.print("put " + metric + " " + time + " " + value + " " + "symbol=" + symbol.toLowerCase() + " " + "expiry=" + expiry + System.getProperty("line.separator"));
-            } else {
-                output.print("put " + metric + " " + time + " " + value + " " + "symbol=" + symbol.toLowerCase() + " " + "expiry=" + expiry + " " + "strike=" + strike + " " + "option=" + optionType + System.getProperty("line.separator"));
-            }
+     try {
+     symbol = symbol.replaceAll(" ", "").replaceAll("&", "");
+     if (symbol.equals("NIFTY") || symbol.equalsIgnoreCase("CNXNifty") || symbol.equalsIgnoreCase("Nifty50")) {
+     symbol = "NSENIFTY";
+     }
+     if (!isNumeric(value)) {
+     value = "0";
+     }
+     if (expiry == null) {
+     output.print("put " + metric + " " + time + " " + value + " " + "symbol=" + symbol.replaceAll("[^A-Za-z0-9]", "").toLowerCase() + System.getProperty("line.separator"));
+     } else if (strike == null) {
+     output.print("put " + metric + " " + time + " " + value + " " + "symbol=" + symbol.toLowerCase() + " " + "expiry=" + expiry + System.getProperty("line.separator"));
+     } else {
+     output.print("put " + metric + " " + time + " " + value + " " + "symbol=" + symbol.toLowerCase() + " " + "expiry=" + expiry + " " + "strike=" + strike + " " + "option=" + optionType + System.getProperty("line.separator"));
+     }
 
 
-        } catch (Exception ex) {
-            logger.log(Level.SEVERE, null, ex);
-        } finally {
-            //output.close();
-        }
-    }
-*/
+     } catch (Exception ex) {
+     logger.log(Level.SEVERE, null, ex);
+     } finally {
+     //output.close();
+     }
+     }
+     */
     static void writeToSQL(String dateString, HashMap<String, HistoricalData> h) throws SQLException {
         PreparedStatement stmt = null;
         conn.setAutoCommit(false);
@@ -888,7 +1002,10 @@ public class NSEData {
         URL nseLink = new URL(nameChangeLink);
         int j = 0;
         int rowsToSkip = 1;
-        if (getResponseCode(nameChangeLink,null) != 404) {
+        Object[] res = getResponseCode(nameChangeLink, null);
+        if (Integer.valueOf(res[0].toString()) != 404) {
+            nseLink = new URL(res[1].toString());
+
             BufferedReader in = new BufferedReader(new InputStreamReader(nseLink.openStream()));
 
             //write to database
@@ -935,18 +1052,52 @@ public class NSEData {
         }
     }
 
-    public static int getResponseCode(String urlString,String referer) throws MalformedURLException, IOException {
+    public static Object[] getResponseCode(String urlString, String referer) throws MalformedURLException, IOException {
+        Object[] out = new Object[2];
+        out[1] = urlString;
         URL u = new URL(urlString);
         HttpURLConnection huc = (HttpURLConnection) u.openConnection();
-        if(referer!=null){
-        huc.setRequestProperty("referer", referer);            
-        huc.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36");
-        huc.setRequestProperty("Upgrade-Insecure-Requests", "1");
-        huc.setRequestProperty("Accept-Encoding","gzip, deflate, sdch, br" );
+        if (referer != null) {
+            huc.setRequestProperty("referer", referer);
+            huc.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36");
+            huc.setRequestProperty("Upgrade-Insecure-Requests", "1");
+            huc.setRequestProperty("Accept-Encoding", "gzip, deflate, sdch, br");
         }
+        boolean redirect = true;
         huc.setRequestMethod("GET");
         huc.connect();
-        return huc.getResponseCode();
+        while (redirect) {
+            int status = huc.getResponseCode();
+            if (status != HttpURLConnection.HTTP_OK) {
+                if (status == HttpURLConnection.HTTP_MOVED_TEMP
+                        || status == HttpURLConnection.HTTP_MOVED_PERM
+                        || status == HttpURLConnection.HTTP_SEE_OTHER) {
+                    String newUrl = huc.getHeaderField("location");
+                    String oldUrl = huc.getURL().toString();
+                    out[1] = newUrl;
+                    //Obtenemos la cookie por si se necesita
+                    String cookies = huc.getHeaderField("Set-Cookie");
+                    System.out.println("Cookies: " + cookies);
+                    //Reabrimos la conexión
+                    huc = (HttpURLConnection) new URL(newUrl).openConnection();
+                    if (referer != null) {
+                        huc.setRequestProperty("referer", referer);
+                        huc.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36");
+                        huc.setRequestProperty("Upgrade-Insecure-Requests", "1");
+                        huc.setRequestProperty("Accept-Encoding", "gzip, deflate, sdch, br");
+                        if (cookies != null) {
+                            huc.setRequestProperty("Cookie", cookies);
+                        }
+                    }
+                } else {
+                    break;
+                }
+            } else {
+                redirect = false;
+            }
+        }
+        out[0] = huc.getResponseCode();
+        return out;
     }
 
     public static Date addDays(Date date, int days) {
