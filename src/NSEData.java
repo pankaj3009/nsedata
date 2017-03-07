@@ -210,7 +210,7 @@ public class NSEData {
                 int attempt = 0;
                 while (attempt < attempts) {
                     Object[] res = getResponseCode(nseTrades, "https://nseindia.com/products/content/derivatives/equities/archieve_fo.htm");
-                    if (Integer.valueOf(res[0].toString()) != 404) {
+                    if (Integer.valueOf(res[0].toString()) != 404 && Integer.valueOf(res[0].toString()) != 500) {
                         nseTrades = res[1].toString();
                         System.out.println("Parsing URL :" + nseTrades);
                         String fileName = inputFormat.format(start.getTime()).toUpperCase() + "_fno.zip";
@@ -311,7 +311,7 @@ public class NSEData {
                             }
                         }
                         if(useR){
-                                String homefolder="/home/psharma/Seafile/rfiles/dailyfno/";
+                                String homefolder="/home/psharma/Dropbox/rfiles/dailyfno/";
                                 String parseString=null;
                                 parseString="setwd(\"" + homefolder + "\")";
                                 c.eval(parseString);
@@ -331,10 +331,13 @@ public class NSEData {
                                     }
                                     //load file from R 
                                     //write to R
-                                    REXP v=c.eval("file.exists(paste(\""+ hist.symbol+"\", \".Rdata\", sep = "+"\"\"))");
+                                    parseString="file.exists(paste(\""+homefolder+"\",\""+subfolder+"\",\""+hist.symbol+"\",\".Rdata\", sep = \"\"))";
+                                    REXP v=c.eval(parseString);
+//                                    REXP v=c.eval("file.exists(paste(\""+ hist.symbol+"\", \".Rdata\", sep = "+"\"\"))");
                                     if(v.asInteger()>0){
                                         //load file from R
-                                        parseString="load(\""+hist.symbol+".Rdata\")";
+                                        parseString="load(paste(\""+homefolder+"\",\""+subfolder+"\",\""+hist.symbol+"\",\".Rdata\", sep = \"\"))";
+//                                        parseString="load(\""+hist.symbol+".Rdata\")";
                                         c.eval(parseString);
                                     }else{
                                         parseString="md=data.frame(date=as.POSIXct(as.character(),\"\"),"
@@ -355,9 +358,9 @@ public class NSEData {
                                             ",oi="+hist.openInterest+",symbol=\""+hist.symbol+ "\")";
                                     c.voidEval(parseString);
                                         c.voidEval("md=rbind(md,datarow)");
-                                    parseString="md=unique(md)";
+                                    //parseString="md=unique(md)";
                                     c.voidEval(parseString);
-                                    parseString="md=md[order(md$date),]";
+                                    //parseString="md=md[order(md$date),]";
                                     c.voidEval(parseString);
                                     new File(homefolder+subfolder).mkdir();
                                     parseString="save(md,file = paste(\""+homefolder+"\",\""+subfolder+"\",\""+hist.symbol+"\",\".Rdata\", sep = \"\"))";
@@ -787,7 +790,7 @@ public class NSEData {
 
 //        httpConn.setRequestProperty("REFERRER", referer);
         int responseCode = httpConn.getResponseCode();
-        if (responseCode != 403) {
+        if (responseCode != 403 && responseCode!=500) {
             try (InputStream inputStream = httpConn.getInputStream()) {
                 Path path = Paths.get("logs", fileName);
                 //           FileOutputStream outputStream = new FileOutputStream(fileName);
