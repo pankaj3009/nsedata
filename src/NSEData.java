@@ -209,15 +209,21 @@ public class NSEData {
                 URL nseTradesURL = new URL(nseTrades);
                 int attempt = 0;
                 while (attempt < attempts) {
-                    Object[] res = getResponseCode(nseTrades, "https://nseindia.com/products/content/derivatives/equities/archieve_fo.htm");
+                    String fileName = inputFormat.format(start.getTime()).toUpperCase() + "_fno.zip";
+                       if(!new File("logs/" + fileName).exists()){
+                           Object[] res = getResponseCode(nseTrades, "https://nseindia.com/products/content/derivatives/equities/archieve_fo.htm");
                     if (Integer.valueOf(res[0].toString()) != 404 && Integer.valueOf(res[0].toString()) != 500) {
                         nseTrades = res[1].toString();
                         System.out.println("Parsing URL :" + nseTrades);
-                        String fileName = inputFormat.format(start.getTime()).toUpperCase() + "_fno.zip";
-                        if (!new File("logs/" + fileName).exists()) {
-                            saveToDisk(nseTrades, fileName, "https://nseindia.com/products/content/derivatives/equities/archieve_fo.htm");
-                        }
-                        ZipFile zipFile = new ZipFile("logs/" + fileName);
+                        saveToDisk(nseTrades, fileName, "https://nseindia.com/products/content/derivatives/equities/archieve_fo.htm");
+                  } else {
+                        Thread.sleep(60 * pausebetweenattempts * 1000);
+                        attempt++;
+                        logger.log(Level.INFO, "Attempt: {0}", new Object[]{attempt});
+                    }
+                    
+                       }
+                       ZipFile zipFile = new ZipFile("logs/" + fileName);
                         ZipEntry entry = zipFile.entries().nextElement();
                         InputStream zin = zipFile.getInputStream(entry);
                         //zin.getNextEntry();
@@ -252,7 +258,7 @@ public class NSEData {
                                 recordsReceived++;
                             }
                         }
-                        logger.log(Level.INFO, "Parsing URL: {0}, Records Received:{1}", new Object[]{nseTrades, recordsReceived});
+                        logger.log(Level.INFO, "Parsing Data for URL: {0}, Records Received:{1}", new Object[]{nseTrades, recordsReceived});
                         //data starts from 20000707
                         if (useCassandra) {
                             for (HistoricalData hist : h) {
@@ -358,9 +364,9 @@ public class NSEData {
                                             ",oi="+hist.openInterest+",symbol=\""+hist.symbol+ "\")";
                                     c.voidEval(parseString);
                                         c.voidEval("md=rbind(md,datarow)");
-                                    //parseString="md=unique(md)";
+                                    parseString="md=unique(md)";
                                     c.voidEval(parseString);
-                                    //parseString="md=md[order(md$date),]";
+                                    parseString="md=md[order(md$date),]";
                                     c.voidEval(parseString);
                                     new File(homefolder+subfolder).mkdir();
                                     parseString="save(md,file = paste(\""+homefolder+"\",\""+subfolder+"\",\""+hist.symbol+"\",\".Rdata\", sep = \"\"))";
@@ -368,11 +374,7 @@ public class NSEData {
                                 }                              
                         }
                         break;
-                    } else {
-                        Thread.sleep(60 * pausebetweenattempts * 1000);
-                        attempt++;
-                        logger.log(Level.INFO, "Attempt: {0}", new Object[]{attempt});
-                    }
+                    
                 }
                 if (attempt == attempts && sendmail) {
                     Thread t = new Thread(new Mail("psharma@incurrency.com", "Could not retrieve fno data from nse", "NSE Data Alert"));
