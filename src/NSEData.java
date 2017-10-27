@@ -223,6 +223,7 @@ public class NSEData {
                     }
                     
                        }
+                        if(new File("logs/" + fileName).exists()){
                        ZipFile zipFile = new ZipFile("logs/" + fileName);
                         ZipEntry entry = zipFile.entries().nextElement();
                         InputStream zin = zipFile.getInputStream(entry);
@@ -374,7 +375,7 @@ public class NSEData {
                                 }                              
                         }
                         break;
-                    
+                        }   
                 }
                 if (attempt == attempts && sendmail) {
                     Thread t = new Thread(new Mail("psharma@incurrency.com", "Could not retrieve fno data from nse", "NSE Data Alert"));
@@ -451,7 +452,8 @@ public class NSEData {
                             System.out.println("Parsing URL :" + nseTrades);
                             fileName = inputFormat.format(date).toUpperCase() + "_delivered.dat";
                             if (!new File("logs/" + fileName).exists()) {
-                                saveToDisk(nseTrades, fileName, "https://nseindia.com/products/content/equities/equities/archieve_eq.htm");
+                                saveToDisk(nseTrades, fileName,null);
+ //                               saveToDisk(nseTrades, fileName, "https://nseindia.com/products/content/equities/equities/archieve_eq.htm");
                             }
                             BufferedReader in = new BufferedReader(new FileReader(new File("logs/" + fileName)));
                             //zin.getNextEntry();
@@ -782,7 +784,8 @@ public class NSEData {
         URL url = new URL(fileURL);
         HttpURLConnection httpConn = (HttpURLConnection) url.openConnection();
 //       httpConn.setRequestProperty("REFERRER", "http://www1.nseindia.com/products/content/equities/indices/homepage_indices.htm");
-        if (referer != null) {
+
+if (referer != null) {
             httpConn.setRequestProperty("referer", referer);
             httpConn.setRequestProperty("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/52.0.2743.116 Safari/537.36");
             httpConn.setRequestProperty("Upgrade-Insecure-Requests", "1");
@@ -795,8 +798,14 @@ public class NSEData {
         if (responseCode != 403 && responseCode!=500) {
             try (InputStream inputStream = httpConn.getInputStream()) {
                 Path path = Paths.get("logs", fileName);
-                //           FileOutputStream outputStream = new FileOutputStream(fileName);
-
+//                FileOutputStream outputStream = new FileOutputStream(fileName);
+//                byte[] buffer = new byte[1024];
+//                int length;
+//                while ((length = inputStream.read(buffer)) > 0) {
+//                    outputStream.write(buffer, 0, length);
+//                }
+//                inputStream.close();
+//                outputStream.close();
                 Files.copy(inputStream, path, StandardCopyOption.REPLACE_EXISTING);
             }
             httpConn.disconnect();

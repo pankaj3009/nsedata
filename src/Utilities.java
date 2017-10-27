@@ -44,7 +44,7 @@ public class Utilities {
     private static final long MILLI_SEC_PER_DAY = 1000 * 60 * 60 * 24;
     private static final Logger logger = Logger.getLogger(Utilities.class.getName());
 
-    public static TreeMap<Long, String> getPrices(String exchangeSymbol, String expiry, String right, String optionStrike, Date startDate, Date endDate, String metric) {
+   public static TreeMap<Long, String> getPrices(String exchangeSymbol, String expiry, String right, String optionStrike, Date startDate, Date endDate, String metric) {
         TreeMap<Long, String> out = new TreeMap<>();
         try {
             HttpClient client = new HttpClient("http://" + "91.121.168.138" + ":8085");
@@ -79,7 +79,7 @@ public class Utilities {
         return out;
     }
 
-        public static Object[] getOptionStrikesFromKDB(String symbol,String expiry,long startTime, long endTime, String metric){
+   public static Object[] getOptionStrikesFromKDB(String symbol,String expiry,long startTime, long endTime, String metric){
         Object[] out=new Object[1];
         HashMap<String, Object> param = new HashMap();
         param.put("TYPE", Boolean.FALSE);
@@ -236,8 +236,8 @@ public class Utilities {
             String strike = Utilities.formatDouble(Utilities.getDouble(optionStrike, 0), new DecimalFormat("#.##"));
             QueryBuilder builder = QueryBuilder.getInstance();
             String symbol = null;
-            symbol = exchangeSymbol.replaceAll("[^A-Za-z0-9]", "").toLowerCase();
-
+            //symbol = exchangeSymbol.replaceAll("[^A-Za-z0-9-]", "").toLowerCase();
+            symbol=exchangeSymbol.toLowerCase();
             builder.setStart(startDate)
                     .setEnd(endDate)
                     .addMetric(metric)
